@@ -21,8 +21,10 @@ import IconPreview from "@servicetitan/anvil2/assets/icons/material/round/previe
 import IconAdd from "@servicetitan/anvil2/assets/icons/material/round/add.svg";
 
 export const meta = {
-  title: "Edit Form – Quick Actions",
+  title: "Quick Actions",
   path: "/quick-actions",
+  date: "2026-08-04",
+  description: "Convert PDF to form",
 };
 
 type SelectOption = { id: string; label: string };

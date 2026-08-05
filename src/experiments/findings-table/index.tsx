@@ -13,8 +13,10 @@ import IconFlag from "@servicetitan/anvil2/assets/icons/material/round/flag.svg"
 import IconKeyboardArrowDown from "@servicetitan/anvil2/assets/icons/material/round/keyboard_arrow_down.svg";
 
 export const meta = {
-  title: "Findings Card + Data Table",
+  title: "Findings Card",
   path: "/findings-table",
+  date: "2026-07-13",
+  description: "Data table on jobs",
 };
 
 type Status =

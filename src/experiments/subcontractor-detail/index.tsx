@@ -22,8 +22,10 @@ import IconKeyboardArrowDown from "@servicetitan/anvil2/assets/icons/material/ro
 import IconPdf from "@servicetitan/anvil2/assets/icons/st/document_pdf.svg";
 
 export const meta = {
-  title: "Subcontractor Detail — Sticky Tabs",
+  title: "Sticky Tabs",
   path: "/subcontractor-detail",
+  date: "2026-07-13",
+  description: "Subcontractor profile",
 };
 
 const SECTIONS = [

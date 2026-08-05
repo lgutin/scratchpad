@@ -23,20 +23,26 @@
     "@servicetitan/anvil2-ext-mwv": "^0.0.4",
     "@servicetitan/anvil2-illustrations": "^1.0.1",
     "@servicetitan/tokens": "^12.9.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "formstate": "^2.1.0",
+    "lucide-react": "^1.28.0",
     "mobx": "^6.15.0",
     "mobx-react": "^9.2.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.2"
+    "react-router-dom": "^7.13.2",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "agentation": "^3.0.2",
     "agentation-mcp": "^1.2.0",
     "eslint": "^10.1.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^6.0.2",
     "vite": "^8.0.3",
     "vite-plugin-svgr": "^4.5.0"

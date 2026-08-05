@@ -1,0 +1,63 @@
+/*
+ * Tailwind v4 for the landing page ONLY.
+ * We import the theme + utilities layers but intentionally SKIP Tailwind's
+ * preflight (base reset) so none of these styles leak into or reset the
+ * Anvil2 experiments. All shadcn design tokens and the minimal base reset
+ * (box-sizing, default border color) are scoped under `.pg-landing` and live
+ * in the `base` layer so Tailwind utilities still win over them.
+ */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Map shadcn semantic tokens to Tailwind color utilities (bg-card, etc.). */
+@theme inline {
+  --color-background: var(--pg-background);
+  --color-foreground: var(--pg-foreground);
+  --color-card: var(--pg-card);
+  --color-card-foreground: var(--pg-card-foreground);
+  --color-muted-foreground: var(--pg-muted-foreground);
+  --color-border: var(--pg-border);
+}
+
+@layer base {
+  .pg-landing {
+    --pg-background: #ffffff;
+    --pg-foreground: #171717;
+    --pg-card: #ffffff;
+    --pg-card-foreground: #171717;
+    --pg-muted-foreground: #737373;
+    --pg-border: #e5e5e5;
+
+    min-height: 100vh;
+    background: var(--pg-background);
+    color: var(--pg-foreground);
+    font-family: -apple-system, "system-ui", "SF Pro Text", "SF Pro Display",
+      system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Scoped equivalent of the parts of preflight shadcn relies on. */
+  .pg-landing *,
+  .pg-landing *::before,
+  .pg-landing *::after {
+    box-sizing: border-box;
+    border: 0 solid var(--pg-border);
+  }
+
+  .pg-landing :where(h1, h2, h3, h4, p, figure, ul, ol) {
+    margin: 0;
+  }
+
+  .pg-landing :where(h1, h2, h3, h4) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .pg-landing a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

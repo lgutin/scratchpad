@@ -195,25 +195,20 @@ export default function ButtonVariants() {
 
 To add a new experiment: create `src/experiments/<name>/index.tsx` with a `meta` export. It automatically appears on the index page and gets its own route. No other files need to change.
 
-### Vercel Deployment
+### Hosting (GitHub Pages)
 
-Create `vercel.json` at the project root for SPA routing:
+The playground is hosted on **GitHub Pages** at `https://<user>.github.io/component-playground/`. Each experiment is shareable at its own URL, e.g. `/component-playground/quick-actions`.
 
-```json
-{
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
-  ]
-}
-```
+SPA routing on Pages is handled by copying `dist/index.html` to `dist/404.html` (see the `postbuild` script), so deep links fall back to the app shell.
 
-Deploy:
+Deployment normally runs via **GitHub Actions** (`.github/workflows/deploy-pages.yml`) on every push to `main`. While the `@servicetitan/*` packages are unavailable to CI, deploy manually from a local build:
+
 ```bash
-npx vercel          # preview deployment
-npx vercel --prod   # production deployment
+npm run build
+npx gh-pages -d dist   # publish dist/ to the gh-pages branch
 ```
 
-Each experiment is shareable at its own URL, e.g. `https://your-project.vercel.app/buttons`.
+The goal is to restore automatic CI-based deployment once those packages are installable in CI again.
 
 ---
 
@@ -463,17 +458,16 @@ search: "Dialog modal usage"
 
 ### Build, type-check, deploy
 ```bash
-npm run build       # tsc + vite build
-npm run lint        # eslint
-npx vercel          # preview deploy — get a shareable URL
-npx vercel --prod   # production deploy
+npm run build         # tsc + vite build
+npm run lint          # eslint
+npx gh-pages -d dist  # manual GitHub Pages deploy (see Hosting)
 ```
 
 ---
 
 ## Rules
 
-1. **No Tailwind, no shadcn/ui** — Use Anvil2 components and tokens exclusively
+1. **Anvil2 only in experiments** — Use Anvil2 components and tokens exclusively for all experiments (`src/experiments/*`). No Tailwind or shadcn/ui there. **Exception:** the landing page (`src/landing/*`) uses Tailwind v4 + shadcn, imported without preflight and fully scoped under `.pg-landing` so it never leaks into the experiments.
 2. **Always import from `@servicetitan/anvil2`** — Never reach into internal/undocumented paths
 3. **`AnvilProvider` at the root** — Many components break without it
 4. **Search the Anvil2 MCP before guessing** — Don't assume component APIs, look them up
