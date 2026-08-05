@@ -275,8 +275,8 @@ export default function FindingsTableExperiment() {
         boxSizing: "border-box",
       }}
     >
-      <Card padding="large" style={{ width: "100%", maxWidth: 980 }}>
-        <Flex direction="column" gap="4">
+      <Card padding="large" style={{ width: "100%", maxWidth: 1040 }}>
+        <Flex direction="column" gap="4" style={{ minWidth: 0 }}>
           {/* Header: title + count badge + primary action */}
           <Flex justifyContent="space-between" alignItems="center">
             <Flex gap="2" alignItems="center">
