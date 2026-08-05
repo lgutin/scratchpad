@@ -236,7 +236,7 @@ export default function EditFormExperiment() {
     <Flex
       justifyContent="center"
       style={{
-        padding: "var(--size-8)",
+        padding: "24px",
         background: "var(--background-color-secondary, #eef0f2)",
         minHeight: "100vh",
         boxSizing: "border-box",
@@ -604,7 +604,6 @@ const EDIT_FORM_STYLES = `
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 .ef-section-title-left {
@@ -635,7 +634,7 @@ const EDIT_FORM_STYLES = `
   background: var(--a2-background-color-default, #ffffff);
   border: 1px solid var(--a2-border-color-subdued, #e6e6e6);
   border-radius: 12px;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition: background-color 0.12s ease;
 }
 .ef-field-card--clickable {
   cursor: pointer;
@@ -682,8 +681,7 @@ const EDIT_FORM_STYLES = `
 }
 .qa-row:hover .ef-field-card--clickable,
 .qa-row:focus-within .ef-field-card--clickable {
-  border-color: var(--a2-border-color-default, #b6c1c9);
-  box-shadow: 0 1px 3px rgba(9, 30, 66, 0.12);
+  background: var(--a2-background-color-strong, #f9f9f9);
 }
 .qa-toolbar {
   position: absolute;
