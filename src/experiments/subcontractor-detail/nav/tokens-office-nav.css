@@ -1,0 +1,8 @@
+/* tokens-office-nav.css — the office rail's own chrome palette (measured from production). */
+:root {
+  --office-nav-surface: #0f1d26;                      /* dark navy left rail */
+  --office-nav-divider: #444445;                      /* hairline group separators */
+  --office-nav-item-hover: rgba(255, 255, 255, 0.08); /* rail item hover */
+  --office-nav-selected-fg: #56a4ff;                  /* selected rail icon + label (blue) */
+  --office-nav-selected-bg: rgba(120, 187, 250, 0.2); /* selected icon-box fill */
+}

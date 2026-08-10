@@ -132,7 +132,7 @@ import { Routes, Route, Link } from "react-router-dom";
 // Auto-discover all experiments
 const modules = import.meta.glob<{
   default: React.ComponentType;
-  meta: { title: string; path: string };
+  meta: { title: string; path: string; date?: string; description?: string };
 }>("./experiments/*/index.tsx", { eager: true });
 
 const experiments = Object.values(modules).map((m) => ({
@@ -178,8 +178,10 @@ Each experiment lives in its own folder and exports a `meta` object + a default 
 import { Button } from "@servicetitan/anvil2";
 
 export const meta = {
-  title: "Button Variants",
-  path: "/buttons",
+  title: "Button Variants",   // card title on the landing page
+  path: "/buttons",           // route + shareable URL
+  date: "2026-08-04",         // ISO YYYY-MM-DD — set to *today's date* when creating the experiment
+  description: "Button demo", // the subtext shown under the title on the landing card
 };
 
 export default function ButtonVariants() {
@@ -193,7 +195,18 @@ export default function ButtonVariants() {
 }
 ```
 
-To add a new experiment: create `src/experiments/<name>/index.tsx` with a `meta` export. It automatically appears on the index page and gets its own route. No other files need to change.
+The landing page (`src/landing/Landing.tsx`) renders each experiment card from `meta`: **`title`** (heading), **`description`** (subtext), and **`date`** (formatted, and used to sort cards newest-first). Always fill in all four fields — an experiment with only `title` + `path` renders a card with no subtext and no date.
+
+> **How the user starts an experiment.** When kicking off a new experiment, the user will *typically include the title and the subtext (description) right in their request* — often as two short lines, e.g.
+>
+> ```
+> Nav Shell
+> Top and left nav bars
+> ```
+>
+> Treat the **first line as `meta.title`** and the **second line as `meta.description`**. Set **`meta.date` to today's date** (they expect the current date to appear on the landing card — don't leave it blank or copy an old one). If either the title or subtext is missing, pick a sensible one from the task rather than omitting the field.
+
+To add a new experiment: create `src/experiments/<name>/index.tsx` with a `meta` export (all four fields). It automatically appears on the index page and gets its own route. No other files need to change.
 
 ### Hosting (GitHub Pages)
 

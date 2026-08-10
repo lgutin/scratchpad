@@ -1,0 +1,24 @@
+/* tokens-project-shell.css — the project shell's own accent palette: the handful of colors Anvil2
+   has no token for. Everything else the shell reads straight from Anvil2 tokens inline (with literal
+   fallbacks — see §2 above). Kept under a dedicated --project-shell-* prefix so it never clashes. */
+:root {
+  --project-shell-active-bg: rgba(2, 101, 220, 0.1); /* selected module fill (accent blue @10%, matches prod) */
+  --project-shell-active-fg: #0265dc;          /* selected module text (blue) */
+  --project-shell-status-dot: #ffbe00;         /* "In Progress" status dot (amber) */
+  --project-shell-link-fg: #0265dc;            /* linked metadata value (e.g. Bill To) — same blue as the selected module */
+  --project-shell-icon-btn-bg: #ecf4fd;        /* edit / settings button tint */
+  --project-shell-icon-btn-bg-hover: #dce9fb;  /* …hover */
+  --project-shell-icon-btn-fg: #2270ee;        /* …glyph (Figma Text/Link blue) */
+  --project-shell-primary-bg: #0265dc;         /* "Actions" primary button */
+  --project-shell-primary-bg-hover: #0257bd;
+  --project-shell-primary-fg: #ffffff;
+
+  /* Shared height for the banner and the header band, so the header's bottom hairline always lines
+     up with the banner's bottom edge (both box-sizing: border-box, border included). */
+  --project-shell-band-height: 120px;
+
+  /* Banner: a gradient placeholder by default. The experiment overrides this with a bundled photo
+     (see index.tsx, which imports ./banner.jpg and sets --project-shell-banner from the built URL).
+     This gradient is the fallback if that override is ever removed. */
+  --project-shell-banner: linear-gradient(135deg, #3a5a6d 0%, #24323c 100%);
+}

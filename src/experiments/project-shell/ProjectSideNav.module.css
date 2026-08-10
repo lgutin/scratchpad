@@ -1,0 +1,127 @@
+/* 240px white project side-nav (Figma node 922:50888). */
+
+/* Embedding resilience: re-assert the box model locally so the fixed-width column and its
+   cards keep their exact sizes even if the host's global reset uses content-box. */
+.nav,
+.nav * {
+  box-sizing: border-box;
+}
+
+.nav {
+  width: 100%; /* fills the side-nav column defined by ProjectShell (§7) */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--a2-background-color, #ffffff);
+  border-right: 1px solid var(--a2-border-color-subdued, #dfe0e1);
+  /* Plain markup here sits outside Anvil2's font scope — pin it to the base font. */
+  font-family: var(--a2-font-family-base, "Nunito Sans", -apple-system, "Helvetica Neue", sans-serif);
+}
+
+/* Banner photo (Figma node 922:50889) — sits at the top of the scrolling column, so it scrolls
+   up with the module list when the list is long. Fixed 120px; cover-cropped; ships as a gradient
+   and swaps to a real photo via --project-shell-banner: url("…") (see §8 › Banner photo). */
+.banner {
+  flex: none; /* keep its height and scroll, don't compress when the list is long */
+  height: var(--project-shell-band-height, 120px); /* matches the header band so their bottoms align */
+  background: var(--project-shell-banner, linear-gradient(135deg, #3a5a6d 0%, #24323c 100%));
+  background-size: cover;
+  background-position: center 65%; /* show the facade, not the sky */
+  background-repeat: no-repeat;
+  border-bottom: 1px solid var(--a2-border-color-subdued, #dfe0e1);
+}
+
+/* Project Type card (Figma nodes 922:50890 / 922:50891). */
+.info {
+  display: flex;
+  justify-content: center;
+  padding: var(--a2-size-6, 24px) 0;
+}
+
+.typeCard {
+  display: flex;
+  flex-direction: column;
+  width: 176px;
+  padding: var(--a2-size-4, 16px);
+  background: var(--a2-background-color, #ffffff);
+  border: 1px solid var(--a2-border-color-subdued, #dfe0e1);
+  border-radius: var(--a2-radius-1, 3px);
+}
+
+.typeLabel {
+  font-size: 10px;
+  font-weight: var(--a2-font-weight-semibold, 600);
+  line-height: 15px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--a2-foreground-color-subdued, #737475);
+}
+
+.typeValueRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.typeValue {
+  /* Figma node 1:3803: the Project Type value is body text (typography/paragraph) — Nunito Sans
+     Regular, NOT the Sofia Pro display font. (For an unset "No Project Type" placeholder, swap the
+     color to var(--a2-foreground-color-subtle, #949596).) */
+  font-family: var(--a2-font-family-base, "Nunito Sans", -apple-system, "Helvetica Neue", sans-serif);
+  font-size: 16px;
+  font-weight: var(--a2-font-weight-normal, 400); /* Figma: paragraph default weight = 400 */
+  line-height: 24px;
+  color: var(--a2-foreground-color, #141414);
+}
+
+.typeEdit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--a2-foreground-color-subdued, #737475);
+}
+
+/* Module list (Figma node 922:50897) — title + subtitle rows, 24px gutters. */
+.items {
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  padding: 6px var(--a2-size-6, 24px);
+  background: var(--a2-background-color, #ffffff);
+  text-decoration: none;
+}
+
+.item:hover {
+  background: var(--a2-color-neutral-20, #f9f9f9);
+}
+
+.itemLabel {
+  font-size: 14px;
+  font-weight: var(--a2-font-weight-bold, 700); /* prod renders module titles bold */
+  line-height: 21px;
+  color: var(--a2-foreground-color, #141414);
+}
+
+.itemDetail {
+  font-size: 12px;
+  font-weight: var(--a2-font-weight-bold, 700); /* prod renders subtitles bold, same as the label */
+  line-height: 18px;
+  color: var(--a2-foreground-color-subdued, #737475); /* prod subtitle grey */
+}
+
+/* Active module (Figma node 922:50902): accent-blue @10% fill, bold blue text. */
+.itemActive,
+.itemActive:hover {
+  background: var(--project-shell-active-bg, rgba(2, 101, 220, 0.1));
+}
+
+.itemActive .itemLabel,
+.itemActive .itemDetail {
+  color: var(--project-shell-active-fg, #0265dc);
+  font-weight: var(--a2-font-weight-bold, 700);
+}

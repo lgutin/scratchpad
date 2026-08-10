@@ -1,0 +1,184 @@
+/* Anvil2 global top nav — 48px, white, hairline bottom border. */
+.bar {
+  position: relative;
+  height: 48px;
+  background: var(--a2-background-color, #fff);
+  border-bottom: 1px solid var(--a2-border-color-subdued, #dfdfdf);
+  font-family: var(--a2-font-family-base, "Nunito Sans", -apple-system, "Helvetica Neue", sans-serif);
+  flex-shrink: 0;
+}
+
+/* Embedding resilience: re-assert the box model locally so the search field, pills, and hit areas
+   keep their exact sizes even if the host app's global reset uses content-box. Scoped to .bar. */
+.bar,
+.bar * {
+  box-sizing: border-box;
+}
+
+/* Logo: pinned left, symbol + wordmark, 4px gap. */
+.logo {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--a2-foreground-color, #040404);
+}
+
+/* Centered global search field. Width tracks the Figma proportion (~30.4% of the bar).
+   Fixed 32px tall, 6px radius, #8b8b8b outline — measured on the live app. */
+.search {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30.4%;
+  min-width: 360px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px;
+  background: var(--a2-background-color, #fff);
+  border: 1px solid var(--a2-color-neutral-400, #8b8b8b);
+  border-radius: var(--a2-radius-2, 6px);
+  cursor: pointer;
+  transition: background-color 0.2s cubic-bezier(0, 0, 0.4, 1);
+}
+
+/* Slight neutral tint on hover, matching the live app's search button
+   (Anvil2 --a2-background-color-transparent-default-hover: 8% neutral over transparent). */
+.search:hover {
+  background: var(
+    --a2-background-color-transparent-default-hover,
+    color-mix(in srgb, var(--a2-color-neutral-400, #8b8b8b) 8%, transparent)
+  );
+}
+
+.searchLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 0 0;
+  min-width: 0;
+}
+
+.searchIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--a2-foreground-color, #040404);
+  flex-shrink: 0;
+}
+
+.searchPlaceholder {
+  flex: 1 0 0;
+  min-width: 0;
+  /* Measured on the live app: 16px semibold, 24px line-height, neutral-500 subdued gray. */
+  font-size: 16px;
+  font-weight: var(--a2-font-weight-semibold, 600);
+  line-height: 24px;
+  color: var(--a2-foreground-color-subdued, #707070);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.key {
+  display: flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: var(--a2-color-neutral-50, #eeeeee);
+  border-radius: 13px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--a2-foreground-color, #040404);
+}
+
+.plus {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--a2-foreground-color, #040404);
+}
+
+/* Right-side utility cluster. */
+.utilities {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  border-radius: var(--a2-radius-4, 12px);
+  color: var(--a2-foreground-color, #040404);
+  cursor: pointer;
+}
+
+.iconBtn:hover {
+  background: var(--a2-color-neutral-50, #eeeeee);
+}
+
+/* Icon glyphs are drawn in 24px frames. */
+.iconBtn > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  border: none;
+  background: transparent;
+  color: var(--a2-foreground-color, #040404);
+  cursor: pointer;
+}
+
+.accountGlyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.accountChevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+/* The search is absolutely centered, so on narrow screens it would slide under the
+   right-side utility icons (overlap starts ~776px). Hide it just before that point. */
+@media (max-width: 820px) {
+  .search {
+    display: none;
+  }
+}

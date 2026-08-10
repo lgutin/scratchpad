@@ -1,0 +1,122 @@
+/* Anvil2 collapsed global left nav — fixed 60px dark rail (measured in production). */
+
+/* Embedding resilience: this file ships without a global reset, so re-assert the box model here.
+   A host whose reset uses content-box would otherwise size the padded icon box + hit areas larger
+   than spec, making each item too tall for the fixed-height rail. Scoped to .rail so it never
+   touches your page content. */
+.rail,
+.rail * {
+  box-sizing: border-box;
+}
+
+.rail {
+  width: 60px;
+  min-width: 60px;
+  max-width: 60px;
+  align-self: stretch;
+  background: var(--office-nav-surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0 0; /* no side padding so dividers can span the full rail width */
+  overflow: hidden;
+  font-family: var(--a2-font-family-base, "Nunito Sans", -apple-system, "Helvetica Neue", sans-serif);
+}
+
+/* Full-width group separator (e.g. under Messages). Sits in the 12px item gap. */
+.divider {
+  width: 100%;
+  height: 0;
+  border-top: 1px solid var(--office-nav-divider);
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  flex: 1 0 0;
+  min-height: 0;
+  overflow-y: auto; /* if the rail is shorter than its modules, scroll instead of clipping them */
+  scrollbar-width: none; /* Firefox: hide the scrollbar */
+}
+
+.items::-webkit-scrollbar {
+  display: none; /* WebKit: hide the scrollbar */
+}
+
+/* Each module: icon over label, centered. Rendered as a <button> for real interactivity. */
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--a2-foreground-color-inverted, #fff);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.iconBox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 4px; /* 24px glyph inside a 32px hit area */
+  border-radius: var(--a2-radius-2, 6px);
+  color: var(--a2-foreground-color-inverted, #fff);
+}
+
+.item:hover .iconBox {
+  background: var(--office-nav-item-hover);
+}
+
+/* Selected module: blue icon + label, light-blue icon-box fill (matches the app). */
+.item[data-active] .iconBox {
+  background: var(--office-nav-selected-bg);
+  color: var(--office-nav-selected-fg);
+}
+
+.item[data-active] .label {
+  color: var(--office-nav-selected-fg);
+}
+
+.label {
+  margin: 0;
+  width: 100%;
+  text-align: center;
+  font-family: var(--a2-font-family-base, "Nunito Sans", -apple-system, "Helvetica Neue", sans-serif);
+  font-weight: var(--a2-font-weight-semibold, 600);
+  /* !important guards these two load-bearing metrics: embedded in a design-system app, a global
+     reset / cascade layer can beat this single-class rule and fall back to the UA button font
+     (~13px), which inflates every item's height and overflows the fixed-height rail. */
+  font-size: 10px !important; /* the app uses a uniform 10px label across every module */
+  line-height: 1 !important;
+  color: var(--a2-foreground-color-inverted, #fff);
+  white-space: nowrap; /* module labels are single-line */
+}
+
+/* Collapse control, pinned bottom above a hairline divider. */
+.collapse {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  border-top: 1px solid var(--office-nav-divider);
+}
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  padding: 12px 0; /* 32px icon box in a 56px band → 24px glyph centered w/ 16px gaps (matches prod) */
+  border: none;
+  background: transparent;
+  color: var(--a2-foreground-color-inverted, #fff);
+  border-radius: var(--a2-radius-2, 6px);
+  cursor: pointer;
+}

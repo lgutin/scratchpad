@@ -1,0 +1,24 @@
+/* Full-bleed desktop shell — top bar over [rail | content]. */
+.frame {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--a2-background-color, #fff);
+  font-family: var(--a2-font-family-base, "Nunito Sans", -apple-system, "Helvetica Neue", sans-serif);
+  color: var(--a2-foreground-color, #040404);
+}
+
+.body {
+  flex: 1 0 0;
+  min-height: 0;
+  display: flex;
+  align-items: stretch; /* stretches the 60px rail to full height */
+}
+
+.screen {
+  flex: 1 0 0;
+  min-width: 0;
+  background: var(--a2-background-color, #fff);
+  overflow: auto; /* page content scrolls; nav stays put */
+}

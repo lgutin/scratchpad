@@ -1,0 +1,31 @@
+/* Project shell — a 2-column grid. The left column spans both rows (grid-row: 1 / span 2) and
+   scrolls as one, so the banner + Project Type card + module list scroll together. The right
+   column is the header band (row 1, `auto` height) over the scrollable content (row 2). Fills
+   its container's height. */
+.frame {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: var(--a2-background-color, #ffffff);
+  color: var(--a2-foreground-color, #141414);
+  font-family: var(--a2-font-family-base, "Nunito Sans", -apple-system, "Helvetica Neue", sans-serif);
+}
+
+/* Left column: spans both rows so the whole side-nav (banner included) scrolls as one column.
+   display:flex lets the side-nav stretch to the full column height and own the scroll. */
+.sideCol {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-height: 0;
+  display: flex;
+}
+
+.content {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  overflow: auto; /* page content scrolls; the header stays put */
+  padding: var(--a2-size-8, 32px);
+}

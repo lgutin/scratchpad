@@ -20,6 +20,9 @@ import {
 } from "@servicetitan/anvil2/beta";
 import IconKeyboardArrowDown from "@servicetitan/anvil2/assets/icons/material/round/keyboard_arrow_down.svg";
 import IconPdf from "@servicetitan/anvil2/assets/icons/st/document_pdf.svg";
+import "./nav/tokens-office-nav.css";
+import { TopNav } from "./nav/TopNav";
+import { LeftNav } from "./nav/LeftNav";
 
 export const meta = {
   title: "Sticky Tabs",
@@ -276,26 +279,6 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-function NavBlock({ label, style }: { label: string; style?: React.CSSProperties }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--a2-background-color-strong, #f5f6f7)",
-        boxSizing: "border-box",
-        flexShrink: 0,
-        ...style,
-      }}
-    >
-      <Text variant="eyebrow" style={{ opacity: 0.6 }}>
-        {label}
-      </Text>
-    </div>
-  );
-}
-
 function useScrollSpy(
   scrollContainerRef: React.RefObject<HTMLElement | null>,
   sectionRefs: React.RefObject<(HTMLElement | null)[]>,
@@ -526,13 +509,7 @@ export default function SubcontractorDetailExperiment() {
         background: "var(--a2-background-color-strong, #f5f6f7)",
       }}
     >
-      <NavBlock
-        label="Global Nav Top"
-        style={{
-          height: 48,
-          borderBottom: "1px solid var(--a2-border-color-subdued, #e6e6e6)",
-        }}
-      />
+      <TopNav />
 
       <div
         style={{
@@ -542,14 +519,7 @@ export default function SubcontractorDetailExperiment() {
           alignItems: "stretch",
         }}
       >
-        <NavBlock
-          label="Left Nav"
-          style={{
-            width: 64,
-            alignSelf: "stretch",
-            borderRight: "1px solid var(--a2-border-color-subdued, #e6e6e6)",
-          }}
-        />
+        <LeftNav />
 
         <div
           ref={scrollContainerRef}
