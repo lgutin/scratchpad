@@ -8,7 +8,7 @@ import bannerUrl from "./banner.jpg";
 export const meta = {
   title: "Project Shell",
   path: "/project-shell",
-  date: "2026-08-10",
+  date: "2026-08-10T14:00",
   description: "Projects detail and sub nav",
 };
 

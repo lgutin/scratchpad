@@ -4,7 +4,7 @@ import { Shell } from "./Shell";
 export const meta = {
   title: "Nav Shell",
   path: "/nav-shell",
-  date: "2026-08-10",
+  date: "2026-08-10T09:00",
   description: "Top and left nav bars",
 };
 

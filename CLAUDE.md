@@ -180,7 +180,7 @@ import { Button } from "@servicetitan/anvil2";
 export const meta = {
   title: "Button Variants",   // card title on the landing page
   path: "/buttons",           // route + shareable URL
-  date: "2026-08-04",         // ISO YYYY-MM-DD — set to *today's date* when creating the experiment
+  date: "2026-08-04",         // ISO YYYY-MM-DD — set to *today's date* when creating the experiment. Append a time (e.g. "2026-08-04T14:00") to break ties within the same day.
   description: "Button demo", // the subtext shown under the title on the landing card
 };
 
@@ -195,7 +195,7 @@ export default function ButtonVariants() {
 }
 ```
 
-The landing page (`src/landing/Landing.tsx`) renders each experiment card from `meta`: **`title`** (heading), **`description`** (subtext), and **`date`** (formatted, and used to sort cards newest-first). Always fill in all four fields — an experiment with only `title` + `path` renders a card with no subtext and no date.
+The landing page (`src/landing/Landing.tsx`) renders each experiment card from `meta`: **`title`** (heading), **`description`** (subtext), and **`date`** (formatted, and used to sort cards newest-first). The sort is a lexicographic compare of the raw `date` string, so an optional `T`-time (e.g. `2026-08-04T14:00`) orders same-day experiments — only the date portion is ever displayed. Always fill in all four fields — an experiment with only `title` + `path` renders a card with no subtext and no date.
 
 > **How the user starts an experiment.** When kicking off a new experiment, the user will *typically include the title and the subtext (description) right in their request* — often as two short lines, e.g.
 >
