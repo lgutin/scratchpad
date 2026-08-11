@@ -121,7 +121,7 @@ export default function Landing({
       <div className="mx-auto max-w-[1200px] px-6 py-14">
         <header className="mb-10">
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Component Playground
+            Scratchpad
           </h1>
         </header>
 

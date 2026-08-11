@@ -4,7 +4,7 @@ import svgr from "vite-plugin-svgr";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  base: "/component-playground/",
+  base: "/scratchpad/",
   plugins: [
     react(),
     // Tailwind v4 is used ONLY by the landing page (src/landing/landing.css),

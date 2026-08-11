@@ -1,4 +1,4 @@
-# CLAUDE.md — Anvil2 Component Playground
+# CLAUDE.md — Anvil2 Scratchpad
 
 > Personal sandbox for experimenting with ServiceTitan's Anvil2 design system.
 > Read this file before writing any code.
@@ -154,7 +154,7 @@ function App() {
 function Index() {
   return (
     <nav>
-      <h1>Component Playground</h1>
+      <h1>Scratchpad</h1>
       <ul>
         {experiments.map((exp) => (
           <li key={exp.path}>
@@ -210,7 +210,7 @@ To add a new experiment: create `src/experiments/<name>/index.tsx` with a `meta`
 
 ### Hosting (GitHub Pages)
 
-The playground is hosted on **GitHub Pages** at `https://<user>.github.io/component-playground/`. Each experiment is shareable at its own URL, e.g. `/component-playground/quick-actions`.
+The playground is hosted on **GitHub Pages** at `https://<user>.github.io/scratchpad/`. Each experiment is shareable at its own URL, e.g. `/scratchpad/quick-actions`.
 
 SPA routing on Pages is handled by copying `dist/index.html` to `dist/404.html` (see the `postbuild` script), so deep links fall back to the app shell.
 
