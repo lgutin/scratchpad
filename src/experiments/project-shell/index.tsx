@@ -9,7 +9,7 @@ export const meta = {
   title: "Project Shell",
   path: "/project-shell",
   date: "2026-08-10T14:00",
-  description: "Projects detail and sub nav",
+  description: "Project header and sub nav",
 };
 
 // The banner ships as a bundled asset (Vite resolves ./banner.jpg to a hashed, base-aware URL that
