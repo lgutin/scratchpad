@@ -11,14 +11,32 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
-/* Map shadcn semantic tokens to Tailwind color utilities (bg-card, etc.). */
+/*
+ * Map shadcn semantic tokens to Tailwind color utilities (bg-card, bg-primary,
+ * etc.). This is the SINGLE source of these `--color-*` mappings so the
+ * utilities are generated once — every consumer (`.pg-landing`, `.pg-shadcn`,
+ * ...) supplies its own `--pg-*` values in its own scope. We intentionally
+ * avoid remapping Tailwind defaults like `--radius-*` so nothing leaks.
+ */
 @theme inline {
   --color-background: var(--pg-background);
   --color-foreground: var(--pg-foreground);
   --color-card: var(--pg-card);
   --color-card-foreground: var(--pg-card-foreground);
+  --color-popover: var(--pg-popover);
+  --color-popover-foreground: var(--pg-popover-foreground);
+  --color-primary: var(--pg-primary);
+  --color-primary-foreground: var(--pg-primary-foreground);
+  --color-secondary: var(--pg-secondary);
+  --color-secondary-foreground: var(--pg-secondary-foreground);
+  --color-muted: var(--pg-muted);
   --color-muted-foreground: var(--pg-muted-foreground);
+  --color-accent: var(--pg-accent);
+  --color-accent-foreground: var(--pg-accent-foreground);
+  --color-destructive: var(--pg-destructive);
   --color-border: var(--pg-border);
+  --color-input: var(--pg-input);
+  --color-ring: var(--pg-ring);
 }
 
 @layer base {

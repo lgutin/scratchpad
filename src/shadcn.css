@@ -1,0 +1,92 @@
+/*
+ * Shared shadcn/ui theme for experiments that opt into shadcn (an intentional
+ * exception to the Anvil2-only rule; see chat).
+ *
+ * How isolation works:
+ *   - The Tailwind theme mapping (`--color-* → --pg-*`) and the generated utility
+ *     classes live once in `src/landing/landing.css` (the single Tailwind entry).
+ *   - The shadcn token VALUES default on `:root` so that portaled surfaces
+ *     (Popover / Dialog / Command / Tooltip mount on document.body, OUTSIDE the
+ *     `.pg-shadcn` wrapper) still resolve their colors. These are just CSS custom
+ *     properties — the Anvil2 experiments never read them, and `.pg-landing`
+ *     overrides them locally, so nothing visually leaks.
+ *   - The small slice of preflight shadcn relies on (border-box, default border
+ *     color, form/heading resets) stays SCOPED under `.pg-shadcn`, so it never
+ *     resets the Anvil2 experiments. Add `pg-shadcn` to portaled content roots
+ *     (PopoverContent, DialogContent, ...) so that reset reaches them too.
+ */
+
+:root {
+  /* shadcn "neutral" base color — light. */
+  --pg-background: oklch(1 0 0);
+  --pg-foreground: oklch(0.145 0 0);
+  --pg-card: oklch(1 0 0);
+  --pg-card-foreground: oklch(0.145 0 0);
+  --pg-popover: oklch(1 0 0);
+  --pg-popover-foreground: oklch(0.145 0 0);
+  --pg-primary: oklch(0.205 0 0);
+  --pg-primary-foreground: oklch(0.985 0 0);
+  --pg-secondary: oklch(0.97 0 0);
+  --pg-secondary-foreground: oklch(0.205 0 0);
+  --pg-muted: oklch(0.97 0 0);
+  --pg-muted-foreground: oklch(0.556 0 0);
+  --pg-accent: oklch(0.97 0 0);
+  --pg-accent-foreground: oklch(0.205 0 0);
+  --pg-destructive: oklch(0.577 0.245 27.325);
+  --pg-border: oklch(0.922 0 0);
+  --pg-input: oklch(0.922 0 0);
+  --pg-ring: oklch(0.708 0 0);
+}
+
+@layer base {
+  .pg-shadcn {
+    box-sizing: border-box;
+    color: var(--pg-foreground);
+    font-family: "Nunito Sans", -apple-system, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Scoped equivalent of the parts of preflight shadcn relies on. */
+  .pg-shadcn *,
+  .pg-shadcn *::before,
+  .pg-shadcn *::after {
+    box-sizing: border-box;
+    border: 0 solid var(--pg-border);
+  }
+
+  .pg-shadcn :where(h1, h2, h3, h4, p, figure, ul, ol) {
+    margin: 0;
+  }
+
+  .pg-shadcn :where(h1, h2, h3, h4) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .pg-shadcn :where(ul, ol) {
+    list-style: none;
+    padding: 0;
+  }
+
+  /* Form controls: inherit typography and drop native chrome so shadcn's
+     utility classes fully control the appearance. */
+  .pg-shadcn :where(button, input, textarea, select) {
+    font: inherit;
+    color: inherit;
+    background-color: transparent;
+  }
+
+  .pg-shadcn :where(button) {
+    cursor: pointer;
+  }
+
+  .pg-shadcn :where(svg) {
+    display: block;
+  }
+
+  .pg-shadcn a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

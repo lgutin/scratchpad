@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
@@ -5,6 +6,11 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   base: "/scratchpad/",
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   plugins: [
     react(),
     // Tailwind v4 is used ONLY by the landing page (src/landing/landing.css),

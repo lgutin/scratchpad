@@ -1,0 +1,226 @@
+/* Budget Code Picker v1 — segmented type-ahead field + popover menu.
+   Uses --a2- Anvil tokens (names per hammer foundations inventory) with
+   concrete fallbacks from the Figma node's variables. Any rule that reaches
+   into Anvil internals or has no matching token is marked // DEVIATION. */
+
+/* ── Field shell ─────────────────────────────────────────────────────── */
+/* DEVIATION: Anvil2 has no segmented multi-input field primitive, so the
+   shell is composed by hand while reusing Anvil field tokens. */
+.bcv1-shell {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 8px 0 14px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--a2-border-color-default, #c2c8ce);
+  border-radius: var(--a2-border-radius-md, 6px);
+  background: var(--a2-background-color, #fff);
+  font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+  cursor: text;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.bcv1-shell:focus-within {
+  border-color: var(--a2-foreground-color-primary, #0265dc);
+  outline: 2px solid var(--a2-foreground-color-primary, #0265dc);
+  outline-offset: 2px;
+}
+
+/* Every segment is an <input>; committed ones get --token (read-only, styled
+   like plain text). Identical box metrics + width formula = no layout shift
+   when the active segment changes. */
+.bcv1-input {
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--a2-foreground-color, #141414);
+  line-height: 1.4;
+  border: 0;
+  outline: none;
+  /* Horizontal padding gives the blue highlight chip breathing room; applied
+     to every segment (content-box) so widths stay consistent and switching the
+     active segment doesn't jump. */
+  padding: 6px 6px;
+  box-sizing: content-box;
+  margin: 0;
+  background: transparent;
+  min-width: 1ch;
+  text-overflow: ellipsis;
+}
+
+/* Read-only committed segment: looks like a token, click to re-edit. */
+.bcv1-input--token {
+  cursor: pointer;
+}
+
+.bcv1-input--token:hover {
+  color: var(--a2-foreground-color-primary, #0265dc);
+}
+
+/* DEVIATION: re-editing highlight mirrors TextField's .highlight internal. */
+.bcv1-input--highlight {
+  background: var(--a2-background-color-primary-subdued, #e0f2ff);
+  border-radius: 4px;
+}
+
+.bcv1-sep {
+  padding: 0 2px;
+  color: var(--a2-foreground-color-subdued, #606162);
+  user-select: none;
+}
+
+.bcv1-clear {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Popover menu ────────────────────────────────────────────────────── */
+.bcv1-menu {
+  font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+  overflow: hidden;
+  border-radius: var(--a2-border-radius-md, 6px);
+}
+
+/* Header aligns with row text: menu body pad (8px) + row inline pad (16px). */
+.bcv1-menu-header {
+  padding: 10px 24px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+/* size-2 body padding insets the rounded rows from the popover edges;
+   size-1 gap separates adjacent rows so highlight bands don't touch. */
+.bcv1-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--a2-size-1, 4px);
+  max-height: 300px;
+  overflow-y: auto;
+  padding: var(--a2-size-2, 8px);
+  margin: 0;
+  list-style: none;
+}
+
+/* Anvil OptionRow: 8px/16px padding, radius-medium, so the highlight is a
+   rounded inset band (not edge-to-edge). */
+.bcv1-row {
+  display: flex;
+  align-items: center;
+  gap: var(--a2-size-2, 8px);
+  padding: 8px 16px;
+  border-radius: var(--a2-border-radius-md, 6px);
+  cursor: pointer;
+}
+
+/* Hover / keyboard highlight = neutral gray band (Anvil OptionRow
+   --highlighted = background-color-strong-hover), not a blue inset. */
+.bcv1-row--hi,
+.bcv1-row:hover {
+  background: var(--a2-background-color-strong-hover, #ececed);
+}
+
+/* Row holding the segment's current committed value — blue fill + blue text. */
+.bcv1-row--current {
+  background: var(--a2-background-color-primary-subdued, #e0f2ff);
+}
+
+.bcv1-row--current .bcv1-row-code,
+.bcv1-row--current .bcv1-row-desc {
+  color: var(--a2-foreground-color-primary, #0265dc);
+}
+
+.bcv1-row-code {
+  flex: none;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--a2-foreground-color, #141414);
+}
+
+.bcv1-row-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  color: var(--a2-foreground-color-subdued, #606162);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* DEVIATION: Anvil Badge is a notification dot; the outlined success pill in
+   the Figma spec is a custom span using success tokens. */
+.bcv1-pill {
+  flex: none;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  border-radius: 999px;
+  background: var(--a2-background-color-success-subdued, #cef8e0);
+  border: 1px solid var(--a2-border-color-success, #1fda6f);
+  color: var(--a2-color-green-700, #157a3f);
+}
+
+/* Fixed-width trailing slot: reserved even without a check so the "This
+   project" pill (and row content) aligns vertically across all rows. */
+.bcv1-check {
+  flex: none;
+  width: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--a2-foreground-color-primary, #0265dc);
+}
+
+/* Matches Anvil OptionsPopover footer slot: strong bg, 1px top border, size-2 pad. */
+.bcv1-footer {
+  display: flex;
+  flex-direction: column;
+  padding: var(--a2-size-2, 8px);
+  border-top: 1px solid var(--a2-border-color-subdued, #dfe0e1);
+  background: var(--a2-background-color-strong, #f7f7f7);
+}
+
+/* AddNewItemButton is a full-width secondary button (per hammer). */
+.bcv1-footer button {
+  width: 100%;
+  justify-content: center;
+}
+
+.bcv1-helper {
+  font-size: 12px;
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+/* ── v0: one label, three fields, periods between, no chevron ────────── */
+.bcv0-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.bcv0-sep {
+  flex: none;
+  padding: 0 6px;
+  font-size: 16px;
+  color: var(--a2-foreground-color-subdued, #606162);
+  user-select: none;
+}
+
+/* DEVIATION: hide the SelectField chevron to match the Figma budget-code field
+   (the input itself stays clickable to open the menu). */
+.bcv0-fields button[aria-label="toggle menu" i] {
+  display: none !important;
+}
+
+/* DEVIATION: Anvil sizes a SelectField's option popover to its trigger. With
+   the three fields compressed into one row the triggers are narrow, so the
+   portaled option menus would condense. Widen Anvil's compiled OptionsPopover
+   so option text ("01-100 · General Requirements") stays readable. */
+[class*="options-popover"] {
+  min-width: 300px;
+}
