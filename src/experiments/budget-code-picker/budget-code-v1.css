@@ -30,6 +30,21 @@
   outline-offset: 2px;
 }
 
+/* Small size: shorter field + smaller text, mirroring Anvil SelectField size. */
+.bcv1-shell--small {
+  min-height: 32px;
+  padding: 0 6px 0 12px;
+}
+
+.bcv1-shell--small .bcv1-input {
+  font-size: 14px;
+  padding: 4px 6px;
+}
+
+.bcv1-shell--small .bcv1-sep {
+  font-size: 14px;
+}
+
 /* Every segment is an <input>; committed ones get --token (read-only, styled
    like plain text). Identical box metrics + width formula = no layout shift
    when the active segment changes. */
@@ -57,8 +72,10 @@
   cursor: pointer;
 }
 
+/* Hover a committed token: gray background (like the menu row hover), not blue text. */
 .bcv1-input--token:hover {
-  color: var(--a2-foreground-color-primary, #0265dc);
+  background: var(--a2-background-color-strong-hover, #ececed);
+  border-radius: 4px;
 }
 
 /* DEVIATION: re-editing highlight mirrors TextField's .highlight internal. */
@@ -206,9 +223,39 @@
   color: var(--a2-foreground-color-subdued, #606162);
 }
 
+/* Notes: exhaustive deviations/overrides list on each card. */
+.bc-notes {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+.bc-notes code {
+  font-size: 12px;
+}
+
 /* ── v0: one label, three fields, periods between, no chevron ────────── */
+/* Grid with three equal 1fr columns (fields) + auto columns (separators) so
+   the fields stay equal width and don't grow when a value adds the clear ×. */
+.bcv0-fields {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: center;
+  width: 100%;
+}
+
 .bcv0-field {
-  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Lock each field's SelectField to its column so the clear × can't widen it. */
+.bcv0-field > * {
+  width: 100%;
   min-width: 0;
 }
 
@@ -216,7 +263,10 @@
   flex: none;
   padding: 0 6px;
   font-size: 16px;
-  color: var(--a2-foreground-color-subdued, #606162);
+  /* Heavier separator per Figma: Anvil display/headline face (Sofia Pro Bold). */
+  font-family: var(--a2-font-family-display, "Sofia Pro", SofiaPro, sans-serif);
+  font-weight: 700;
+  color: var(--a2-foreground-color, #141414);
   user-select: none;
 }
 
@@ -226,10 +276,61 @@
   display: none !important;
 }
 
-/* DEVIATION: Anvil sizes a SelectField's option popover to its trigger. With
-   the three fields compressed into one row the triggers are narrow, so the
-   portaled option menus would condense. Widen Anvil's compiled OptionsPopover
-   so option text ("01-100 · General Requirements") stays readable. */
+/* DEVIATION: give all three v0 menus the same fixed width (Anvil would size to
+   the trigger/content and vary per field). `:not(...-)` targets the popover
+   root only, not its -body/-footer children. Clamp title/description to 1 line. */
+[class*="options-popover"]:not([class*="options-popover-"]) {
+  width: 300px !important;
+}
+
 [class*="options-popover"] {
-  min-width: 300px;
+  --a2-mod-option-content-title-line-clamp: 1;
+  --a2-mod-option-content-description-line-clamp: 1;
+}
+
+/* Footer: keep the hairline full-width but give the add button white space on
+   its left/right — white surface + Anvil's default size-2 inset around it. */
+[class*="options-popover-footer"] {
+  background: var(--a2-background-color, #fff) !important;
+}
+
+/* Cap the scroll area so v0 menus show ~6 options like v1 (Anvil leaves it
+   uncapped, so the menu grows to all options). Matches v1's 300px list. */
+[class*="options-popover"] [class*="scroller"] {
+  max-height: 300px !important;
+}
+
+/* DEVIATION: Anvil's SelectOption content (OptionContentArea) stacks the title
+   over the description in a column. Flip that container to a row so v0 rows read
+   inline (bold code + subdued description on one line) like v1. Targets the
+   compiled `_title_`/`_description_` classes inside the portaled popover; v1's
+   custom menu uses `.bcv1-*` classes and a different popover, so it's untouched. */
+[class*="options-popover"] div:has(> [class*="title"]) {
+  /* Anvil sets flex-direction/justify-content inline, so override with !important. */
+  flex-direction: row !important;
+  align-items: baseline !important;
+  justify-content: flex-start !important;
+  column-gap: 8px;
+}
+
+[class*="options-popover"] [class*="title"] {
+  flex: none;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+[class*="options-popover"] [class*="description"] {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+}
+
+/* Selected option: full blue label (title + description) to match v1. Anvil
+   only blues the primary text (title); this also blues the description.
+   DEVIATION: targets Anvil's compiled `single-selected` option row. */
+[class*="options-popover"] [class*="single-selected"] [class*="title"],
+[class*="options-popover"] [class*="single-selected"] [class*="description"] {
+  color: var(--a2-foreground-color-primary, #0265dc) !important;
 }

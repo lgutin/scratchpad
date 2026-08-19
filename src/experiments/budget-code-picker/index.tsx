@@ -11,11 +11,11 @@ import {
 import {
   Button,
   Card,
-  Chip,
   FieldLabel,
   Flex,
   Icon,
   Popover,
+  SegmentedControl,
   SelectFieldSync,
   Text,
   type SelectFieldOption,
@@ -52,6 +52,8 @@ const SEGMENTS: Record<SegmentKey, SegmentMeta> = {
 
 // A budget code is the composite of one item per segment, in this order.
 const SEGMENT_ORDER: SegmentKey[] = ["cost-code", "cost-type", "phase"];
+
+type FieldSize = "small" | "medium";
 
 type BudgetOption = SelectFieldOption & {
   group: SegmentKey;
@@ -195,9 +197,6 @@ const v0ProjectItemsFor = (segment: SegmentKey) =>
 const v0MoreItemsFor = (segment: SegmentKey) =>
   V0_ITEMS_BY_SEGMENT[segment].filter((item) => !item.extra.onProject);
 
-const v0DescriptionOf = (o: BudgetOption) =>
-  typeof o.content?.description === "string" ? o.content.description : "";
-
 // ---------------------------------------------------------------------------
 // Composite state helpers
 // ---------------------------------------------------------------------------
@@ -228,7 +227,7 @@ function segmentList(key: SegmentKey, text: string): BudgetOption[] {
   );
 }
 
-function PickerV1() {
+function PickerV1({ size }: { size: FieldSize }) {
   const [committed, setCommitted] = useState<Composite>(EMPTY_COMPOSITE);
   const [active, setActive] = useState<number>(0); // 0..2 editing, 3 resting
   const [text, setText] = useState("");
@@ -451,12 +450,6 @@ function PickerV1() {
     fieldParts.push(node);
   });
 
-  const helper = allCommitted
-    ? "Budget code complete. Click a segment to change it."
-    : anyCommitted || active > 0
-      ? "Type to search, Tab or Enter to confirm. Use \u2190 \u2192 to move between segments."
-      : "Type to search, Tab or Enter to confirm.";
-
   const assembled = allCommitted
     ? SEGMENT_ORDER.map((k) => committed[k]!.token).join(V1_SEP)
     : "";
@@ -566,7 +559,7 @@ function PickerV1() {
                 {(triggerProps: Record<string, unknown>) => (
                   <div
                     {...triggerProps}
-                    className="bcv1-shell"
+                    className={`bcv1-shell${size === "small" ? " bcv1-shell--small" : ""}`}
                     onClick={() => {
                       if (active >= 3) return;
                       setMenuOpen(true);
@@ -595,9 +588,6 @@ function PickerV1() {
               <Popover.Content>{menu}</Popover.Content>
             </Popover>
           </div>
-          <Text variant="body" className="bcv1-helper">
-            {helper}
-          </Text>
         </Flex>
 
         {/* Assembled output */}
@@ -617,7 +607,7 @@ function PickerV1() {
           </Text>
         </Flex>
 
-        {/* Anvil deviations note */}
+        {/* Notes — deviations & overrides */}
         <Flex
           direction="column"
           gap="1"
@@ -627,18 +617,62 @@ function PickerV1() {
           }}
         >
           <Text variant="eyebrow" size="small">
-            Anvil deviations
+            Notes
           </Text>
-          <Text variant="body" size="small" subdued>
-            Anvil2 has no segmented multi-input field, so the field shell is
-            custom: each segment is a native <code>&lt;input&gt;</code> (read-only
-            when not active) that sizes to its content so switching segments never
-            shifts. The menu (<code>Popover</code>), section labels, option rows,
-            check <code>Icon</code>, and the add-item <code>Button</code> are Anvil
-            components, and all colors, spacing, and type use <code>--a2-</code>
-            tokens. Project items are surfaced with a section label rather than a
-            per-row chip.
-          </Text>
+          <ul className="bc-notes">
+            <li>
+              Fully custom control: Anvil2 has no segmented multi-input field, so
+              the field shell, menu, and interactions are all hand-built.
+            </li>
+            <li>
+              Each segment is a native <code>&lt;input&gt;</code> (read-only when
+              not the active one), styled as a token.
+            </li>
+            <li>
+              Inputs use CSS <code>field-sizing: content</code> to size to their
+              text — symmetric highlight-chip padding and no width jump when moving
+              between segments.
+            </li>
+            <li>
+              The dropdown is a custom Anvil <code>Popover</code> with hand-written
+              rows (<code>.bcv1-*</code>), not Anvil's <code>SelectField</code>{" "}
+              menu.
+            </li>
+            <li>
+              Two custom sections ("… · This project" / "More …") with headers —
+              no per-row "This project" chip.
+            </li>
+            <li>
+              Selected row (blue background, blue code + description, check) is
+              custom CSS.
+            </li>
+            <li>
+              Hovering a committed token shows a gray background (matching the menu
+              row hover), not blue text.
+            </li>
+            <li>
+              Reused Anvil components: <code>Popover</code>, <code>Icon</code>{" "}
+              (check + add), <code>Button</code> (full-width secondary add-item),
+              <code> FieldLabel</code>.
+            </li>
+            <li>
+              Custom keyboard model: type-ahead per segment; Enter / Tab / → to
+              confirm + advance; ← / → to move; Backspace to clear/step back;
+              Escape to clear the query.
+            </li>
+            <li>
+              The Small / Medium control (top right) drives a shell modifier that
+              shortens the field and text.
+            </li>
+            <li>
+              "." separators use the default (Nunito Sans) type — intentionally not
+              the heavier Sofia face used in v0.
+            </li>
+            <li>
+              All colors, spacing, and type use <code>--a2-</code> tokens (with
+              concrete fallbacks).
+            </li>
+          </ul>
         </Flex>
       </Flex>
     </Card>
@@ -646,21 +680,36 @@ function PickerV1() {
 }
 
 // ===========================================================================
-// v0 — three stacked SelectFieldSync (original composite explore)
+// v0 — three SelectFieldSync fields under one label
 // ===========================================================================
 
-const assembledCodeV0 = (composite: Composite) =>
-  SEGMENT_ORDER.map((key) => composite[key]?.token)
-    .filter(Boolean)
-    .join(".");
-
-function PickerV0() {
+function PickerV0({ size }: { size: FieldSize }) {
   const [composite, setComposite] = useState<Composite>(EMPTY_COMPOSITE);
+  const fieldsRef = useRef<HTMLDivElement>(null);
 
   const setSegment = (segment: SegmentKey, option: SelectFieldOption | null) =>
     setComposite((prev) => ({ ...prev, [segment]: option as BudgetOption | null }));
 
-  const hasAny = SEGMENT_ORDER.some((key) => composite[key] !== null);
+  // On selecting a value, auto-advance to the next field (focus + open it).
+  const selectAndAdvance = (index: number, option: SelectFieldOption | null) => {
+    setSegment(SEGMENT_ORDER[index], option);
+    if (option && index < SEGMENT_ORDER.length - 1) {
+      setTimeout(() => {
+        const inputs =
+          fieldsRef.current?.querySelectorAll<HTMLInputElement>(
+            ".bcv0-field input",
+          );
+        const next = inputs?.[index + 1];
+        next?.focus();
+        next?.click();
+      }, 0);
+    }
+  };
+
+  // Like v1: only expose the assembled code once all segments are set.
+  const v0Assembled = SEGMENT_ORDER.every((key) => composite[key])
+    ? SEGMENT_ORDER.map((key) => composite[key]!.token).join(V1_SEP)
+    : "";
 
   return (
     <Card padding="large" style={{ width: "100%", height: "100%" }}>
@@ -680,7 +729,7 @@ function PickerV0() {
             only the code and the dropdown row shows code + description. */}
         <Flex direction="column" gap="1">
           <FieldLabel>Budget Code</FieldLabel>
-          <Flex className="bcv0-fields" gap="0" alignItems="center" wrap="nowrap">
+          <div ref={fieldsRef} className="bcv0-fields">
             {SEGMENT_ORDER.map((key, i) => {
               const projectItems = v0ProjectItemsFor(key);
               const plural = `${SEGMENTS[key].label}s`;
@@ -695,8 +744,8 @@ function PickerV0() {
                     <SelectFieldSync
                       label={SEGMENTS[key].label}
                       hideLabel
+                      size={size}
                       placeholder={SEGMENTS[key].label}
-                      disableClearButton
                       // "This project" items are pinned under their own section
                       // label; the rest sit under a "More …" group header (no
                       // per-row chip).
@@ -704,17 +753,32 @@ function PickerV0() {
                       groupToString={() => `More ${plural}`}
                       pinned={
                         projectItems.length > 0
-                          ? { label: `${plural} · This project`, options: projectItems }
+                          ? {
+                              label: `${plural} · This project`,
+                              // Filter pinned items by the query too (a static
+                              // array would always show); hides non-matches.
+                              options: (searchValue: string) =>
+                                projectItems.filter((o) =>
+                                  (o.searchText ?? o.label)
+                                    .toLowerCase()
+                                    .includes((searchValue ?? "").trim().toLowerCase()),
+                                ),
+                            }
                           : undefined
                       }
                       value={composite[key]}
-                      onSelectedOptionChange={(option) => setSegment(key, option)}
+                      onSelectedOptionChange={(option) => selectAndAdvance(i, option)}
+                      // Stock Anvil "add new item" footer button (like v1).
+                      addItemLabel={`Add ${SEGMENTS[key].label.toLowerCase()}`}
+                      onAddNewItem={() => {
+                        /* stub: wire to real create-new-code flow */
+                      }}
                     />
                   </div>
                 </Fragment>
               );
             })}
-          </Flex>
+          </div>
         </Flex>
 
         <Flex
@@ -728,36 +792,12 @@ function PickerV0() {
           <Text variant="eyebrow" size="small">
             Assembled budget code
           </Text>
-          {hasAny ? (
-            <>
-              <Text variant="headline" size="small" el="h3">
-                {assembledCodeV0(composite)}
-              </Text>
-              <Flex direction="column" gap="1">
-                {SEGMENT_ORDER.map((key) => (
-                  <Flex key={key} gap="2" alignItems="center">
-                    <Chip
-                      label={SEGMENTS[key].label}
-                      color={SEGMENTS[key].color}
-                      size="small"
-                    />
-                    <Text variant="body" size="small" subdued={!composite[key]}>
-                      {composite[key]
-                        ? `${composite[key]!.token} \u00b7 ${v0DescriptionOf(composite[key]!)}`
-                        : "Not set"}
-                    </Text>
-                  </Flex>
-                ))}
-              </Flex>
-            </>
-          ) : (
-            <Text variant="body" size="medium" subdued>
-              Nothing selected
-            </Text>
-          )}
+          <Text variant="headline" size="small" el="h3">
+            {v0Assembled || "\u2014"}
+          </Text>
         </Flex>
 
-        {/* Anvil deviations */}
+        {/* Notes — deviations & overrides */}
         <Flex
           direction="column"
           gap="1"
@@ -767,14 +807,69 @@ function PickerV0() {
           }}
         >
           <Text variant="eyebrow" size="small">
-            Anvil deviations
+            Notes
           </Text>
-          <Text variant="body" size="small" subdued>
-            Stock Anvil <code>SelectField</code>s. CSS overrides hide the chevron
-            and widen the option popover so it doesn't condense under the narrow
-            fields; each field's <code>label</code> is set to the code so the
-            trigger shows the code only while the row keeps code + description.
-          </Text>
+          <ul className="bc-notes">
+            <li>
+              Built from three stock Anvil <code>SelectFieldSync</code> fields —
+              native menu, selected states, add-new, and search all come from
+              Anvil; the <code>size</code> prop (Small / Medium) is passed through.
+            </li>
+            <li>
+              One shared "Budget Code" <code>FieldLabel</code>; each field uses{" "}
+              <code>hideLabel</code> and the three sit in a CSS grid joined by "."
+              separators.
+            </li>
+            <li>
+              Fields use a grid (<code>1fr auto 1fr auto 1fr</code>) so they stay
+              equal width and don't grow when the clear × appears.
+            </li>
+            <li>
+              Each option's <code>label</code> is the code so the field shows the
+              code only; <code>content</code> renders code + description in the row;
+              <code> searchText</code> keeps the description searchable.
+            </li>
+            <li>
+              Sections via Anvil's <code>pinned</code> ("… · This project", as a
+              search-reactive function so pinned items filter) and{" "}
+              <code>groupToString</code> ("More …") — no per-row chip.
+            </li>
+            <li>
+              Stock add-new button via <code>onAddNewItem</code> /{" "}
+              <code>addItemLabel</code>.
+            </li>
+            <li>
+              CSS override: hide the dropdown chevron (
+              <code>[aria-label="toggle menu"]</code>).
+            </li>
+            <li>
+              CSS override: fix all menus to the same width (
+              <code>width: 300px</code>) instead of Anvil's per-field
+              trigger/content sizing.
+            </li>
+            <li>
+              CSS override: force Anvil's stacked option content (title over
+              description) inline with <code>!important</code> (Anvil sets{" "}
+              <code>flex-direction</code> inline) + 1-line clamp.
+            </li>
+            <li>
+              CSS override: blue the selected row's description too (Anvil only
+              blues the code).
+            </li>
+            <li>
+              CSS override: white footer surface with a full-width hairline and
+              the add button inset (white space on its sides); scroller capped to
+              300px so ~6 options show (matches v1).
+            </li>
+            <li>
+              Custom (not an Anvil feature): auto-advance focus + open the next
+              field after a selection; clear × restored.
+            </li>
+            <li>
+              "." separators use the heavier Anvil display face (Sofia Pro Bold,
+              <code> --a2-font-family-display</code>) per Figma.
+            </li>
+          </ul>
         </Flex>
       </Flex>
     </Card>
@@ -784,6 +879,8 @@ function PickerV0() {
 // ===========================================================================
 
 export default function BudgetCodePicker() {
+  const [size, setSize] = useState<FieldSize>("medium");
+
   return (
     <Flex
       justifyContent="center"
@@ -795,17 +892,28 @@ export default function BudgetCodePicker() {
       }}
     >
       <Flex direction="column" gap="4" style={{ width: "100%", maxWidth: 1080 }}>
-        <Text variant="headline" el="h1" size="medium">
-          Budget Code Picker
-        </Text>
+        <Flex justifyContent="space-between" alignItems="center" gap="4">
+          <Text variant="headline" el="h1" size="medium">
+            Budget Code Picker
+          </Text>
+          <SegmentedControl
+            selected={size}
+            onChange={(value) => setSize(value as FieldSize)}
+          >
+            <SegmentedControl.Segment value="small">Small</SegmentedControl.Segment>
+            <SegmentedControl.Segment value="medium">
+              Medium
+            </SegmentedControl.Segment>
+          </SegmentedControl>
+        </Flex>
 
         {/* v1 on the left, v0 on the right */}
         <Flex gap="4" alignItems="flex-start" wrap="wrap">
           <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV1 />
+            <PickerV1 size={size} />
           </div>
           <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV0 />
+            <PickerV0 size={size} />
           </div>
         </Flex>
       </Flex>
