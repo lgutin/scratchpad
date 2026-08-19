@@ -392,9 +392,10 @@ function PickerV1() {
     return SEGMENTS[key].label;
   };
 
-  // Build the inline field content. Every segment is an <input> sized by one
-  // consistent ch-based formula (committed ones are read-only and styled like
-  // tokens), so switching the active segment never changes widths — no jumping.
+  // Build the inline field content. Every segment is an <input> that sizes to
+  // its own content (CSS `field-sizing: content`), so the blue highlight hugs
+  // the text with symmetric padding and switching the active segment (same
+  // content) never changes width — no jumping.
   const fieldParts: React.ReactNode[] = [];
   SEGMENT_ORDER.forEach((key, i) => {
     const committedItem = committed[key];
@@ -404,7 +405,6 @@ function PickerV1() {
 
     const display = isActive ? text : (committedItem?.token ?? "");
     const ph = isActive ? placeholderFor(i) : "";
-    const widthCh = Math.max(display.length, ph.length) + 1;
 
     const node = (
       <input
@@ -418,7 +418,7 @@ function PickerV1() {
         value={display}
         placeholder={ph}
         aria-label={SEGMENTS[key].label}
-        style={{ width: `${widthCh}ch` }}
+        size={1}
         onChange={
           isActive
             ? (e) => {

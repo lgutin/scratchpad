@@ -40,14 +40,15 @@
   line-height: 1.4;
   border: 0;
   outline: none;
-  /* Horizontal padding gives the blue highlight chip breathing room; applied
-     to every segment (content-box) so widths stay consistent and switching the
-     active segment doesn't jump. */
+  /* Size the input to its own content so the blue highlight hugs the text with
+     symmetric left/right padding (no ch-based over-width on the right). */
+  field-sizing: content;
   padding: 6px 6px;
   box-sizing: content-box;
   margin: 0;
   background: transparent;
   min-width: 1ch;
+  max-width: 100%;
   text-overflow: ellipsis;
 }
 
