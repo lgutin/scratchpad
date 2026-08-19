@@ -381,30 +381,32 @@ function PickerV1() {
 
   const anyCommitted = SEGMENT_ORDER.some((k) => committed[k]);
   const allCommitted = SEGMENT_ORDER.every((k) => committed[k]);
-  const nothingSet = !anyCommitted;
 
+  // Re-editing a set segment keeps its current token as the placeholder so the
+  // field never visually empties; otherwise the segment's name.
   const placeholderFor = (i: number) => {
     const key = SEGMENT_ORDER[i];
-    if (nothingSet && i === 0) {
-      return SEGMENT_ORDER.map((k) => SEGMENTS[k].label).join(V1_SEP);
-    }
-    if (committed[key]) return committed[key]!.token;
-    return SEGMENTS[key].label;
+    return committed[key] ? committed[key]!.token : SEGMENTS[key].label;
   };
 
-  // Build the inline field content. Every segment is an <input> that sizes to
-  // its own content (CSS `field-sizing: content`), so the blue highlight hugs
-  // the text with symmetric padding and switching the active segment (same
-  // content) never changes width — no jumping.
+  // Build the inline field content. All three segments always render (so the
+  // remaining placeholders stay visible when partially filled), each an <input>
+  // that sizes to its own content (CSS `field-sizing: content`) — the blue
+  // highlight hugs the text with symmetric padding and switching the active
+  // segment (same content) never changes width — no jumping.
   const fieldParts: React.ReactNode[] = [];
   SEGMENT_ORDER.forEach((key, i) => {
     const committedItem = committed[key];
     const isActive = i === active && active < 3;
-    // Skip segments that are neither active nor committed (implied by placeholder).
-    if (!isActive && !committedItem) return;
 
     const display = isActive ? text : (committedItem?.token ?? "");
-    const ph = isActive ? placeholderFor(i) : "";
+    const ph = isActive
+      ? placeholderFor(i)
+      : committedItem
+        ? ""
+        : SEGMENTS[key].label;
+    // Clicking an empty segment beyond the frontier snaps to the frontier.
+    const clickTarget = committedItem ? i : Math.min(i, navMax);
 
     const node = (
       <input
@@ -431,7 +433,7 @@ function PickerV1() {
         onFocus={isActive ? () => setMenuOpen(true) : undefined}
         onBlur={isActive ? onInputBlur : undefined}
         onKeyDown={isActive ? onInputKeyDown : undefined}
-        onClick={!isActive ? () => editSegment(i) : undefined}
+        onClick={!isActive ? () => editSegment(clickTarget) : undefined}
       />
     );
 
