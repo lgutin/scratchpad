@@ -191,6 +191,10 @@ const V0_ITEMS_BY_SEGMENT: Record<SegmentKey, BudgetOption[]> = {
 const v0ProjectItemsFor = (segment: SegmentKey) =>
   V0_ITEMS_BY_SEGMENT[segment].filter((item) => item.extra.onProject);
 
+// Non-project items keep their segment `group`, shown under a "More …" header.
+const v0MoreItemsFor = (segment: SegmentKey) =>
+  V0_ITEMS_BY_SEGMENT[segment].filter((item) => !item.extra.onProject);
+
 const v0DescriptionOf = (o: BudgetOption) =>
   typeof o.content?.description === "string" ? o.content.description : "";
 
@@ -457,15 +461,22 @@ function PickerV1() {
     ? SEGMENT_ORDER.map((k) => committed[k]!.token).join(V1_SEP)
     : "";
 
-  const menu = activeKey ? (
-    <div className="bcv1-menu" style={{ width: shellWidth }}>
-      <div className="bcv1-menu-header">{SEGMENTS[activeKey].label}</div>
-      <ul className="bcv1-list">
-        {list.map((item, idx) => {
-          const isCurrent = committed[activeKey]?.id === item.id;
+  const menu = activeKey
+    ? (() => {
+        const label = SEGMENTS[activeKey].label;
+        const plural = `${label}s`;
+        // `list` is pinned-first, so project rows come before the rest.
+        const projectRows = list.filter((o) => o.extra.onProject);
+        const restRows = list.filter((o) => !o.extra.onProject);
+        const currentId = committed[activeKey]?.id;
+
+        const renderRow = (item: BudgetOption, idx: number) => {
+          const isCurrent = currentId === item.id;
           return (
-            <li
+            <div
               key={item.id}
+              role="option"
+              aria-selected={isCurrent}
               className={`bcv1-row${idx === hi ? " bcv1-row--hi" : ""}${
                 isCurrent ? " bcv1-row--current" : ""
               }`}
@@ -476,11 +487,6 @@ function PickerV1() {
             >
               <span className="bcv1-row-code">{primaryOf(item)}</span>
               <span className="bcv1-row-desc">{secondaryOf(item)}</span>
-              {item.extra.onProject && (
-                <span className="bcv1-pill">This project</span>
-              )}
-              {/* Always reserve the trailing check slot so pills align vertically
-                  whether or not a row shows a check. */}
               <span className="bcv1-check" aria-hidden={!isCurrent}>
                 {isCurrent && (
                   <Icon
@@ -490,28 +496,47 @@ function PickerV1() {
                   />
                 )}
               </span>
-            </li>
+            </div>
           );
-        })}
-      </ul>
-      <div className="bcv1-footer">
-        <Button
-          appearance="secondary"
-          size="small"
-          icon={{ before: AddIcon }}
-          // Anvil's AddNewItemButton sets width:100% inline (beats the button's
-          // own fit-content width); mirror that here.
-          style={{ width: "100%" }}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            /* stub: wire to real create-new-code flow */
-          }}
-        >
-          Add {SEGMENTS[activeKey].label.toLowerCase()}
-        </Button>
-      </div>
-    </div>
-  ) : null;
+        };
+
+        return (
+          <div className="bcv1-menu" style={{ width: shellWidth }}>
+            <div className="bcv1-list" role="listbox" aria-label={label}>
+              {projectRows.length > 0 && (
+                <div className="bcv1-menu-header">{plural} · This project</div>
+              )}
+              {projectRows.map((item, i) => renderRow(item, i))}
+              {projectRows.length > 0 && restRows.length > 0 && (
+                <div className="bcv1-menu-hr" role="separator" />
+              )}
+              {restRows.length > 0 && (
+                <div className="bcv1-menu-header">
+                  {projectRows.length > 0 ? `More ${plural}` : plural}
+                </div>
+              )}
+              {restRows.map((item, i) => renderRow(item, projectRows.length + i))}
+            </div>
+            <div className="bcv1-footer">
+              <Button
+                appearance="secondary"
+                size="small"
+                icon={{ before: AddIcon }}
+                // Anvil's AddNewItemButton sets width:100% inline (beats the button's
+                // own fit-content width); mirror that here.
+                style={{ width: "100%" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  /* stub: wire to real create-new-code flow */
+                }}
+              >
+                Add {label.toLowerCase()}
+              </Button>
+            </div>
+          </div>
+        );
+      })()
+    : null;
 
   return (
     <Card padding="large" style={{ width: "100%", height: "100%" }}>
@@ -607,12 +632,12 @@ function PickerV1() {
           <Text variant="body" size="small" subdued>
             Anvil2 has no segmented multi-input field, so the field shell is
             custom: each segment is a native <code>&lt;input&gt;</code> (read-only
-            when not active) sharing one width formula so switching segments never
-            shifts. "This project" is a custom success-token pill (Anvil
-            <code> Badge</code> is only a notification dot). The menu
-            (<code>Popover</code>), option rows, check <code>Icon</code>, and the
-            add-item <code>Button</code> are Anvil components, and all colors,
-            spacing, and type use <code>--a2-</code> tokens.
+            when not active) that sizes to its content so switching segments never
+            shifts. The menu (<code>Popover</code>), section labels, option rows,
+            check <code>Icon</code>, and the add-item <code>Button</code> are Anvil
+            components, and all colors, spacing, and type use <code>--a2-</code>
+            tokens. Project items are surfaced with a section label rather than a
+            per-row chip.
           </Text>
         </Flex>
       </Flex>
@@ -658,6 +683,7 @@ function PickerV0() {
           <Flex className="bcv0-fields" gap="0" alignItems="center" wrap="nowrap">
             {SEGMENT_ORDER.map((key, i) => {
               const projectItems = v0ProjectItemsFor(key);
+              const plural = `${SEGMENTS[key].label}s`;
               return (
                 <Fragment key={key}>
                   {i > 0 && (
@@ -671,10 +697,14 @@ function PickerV0() {
                       hideLabel
                       placeholder={SEGMENTS[key].label}
                       disableClearButton
-                      options={V0_ITEMS_BY_SEGMENT[key]}
+                      // "This project" items are pinned under their own section
+                      // label; the rest sit under a "More …" group header (no
+                      // per-row chip).
+                      options={v0MoreItemsFor(key)}
+                      groupToString={() => `More ${plural}`}
                       pinned={
                         projectItems.length > 0
-                          ? { label: "On this project", options: projectItems }
+                          ? { label: `${plural} · This project`, options: projectItems }
                           : undefined
                       }
                       value={composite[key]}
