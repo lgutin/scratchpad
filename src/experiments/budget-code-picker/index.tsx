@@ -274,7 +274,7 @@ function segmentList(key: SegmentKey, text: string): BudgetOption[] {
   );
 }
 
-function PickerV1({ size }: { size: FieldSize }) {
+function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number }) {
   const [committed, setCommitted] = useState<Composite>(EMPTY_COMPOSITE);
   const [active, setActive] = useState<number>(0); // 0..2 editing, 3 resting
   const [text, setText] = useState("");
@@ -652,7 +652,7 @@ function PickerV1({ size }: { size: FieldSize }) {
 
         <Flex direction="column" gap="1">
           <FieldLabel id={labelId}>Budget Code</FieldLabel>
-          <div ref={wrapRef}>
+          <div ref={wrapRef} style={{ width: fieldWidth, maxWidth: "100%" }}>
             <Popover
               open={open}
               modal={false}
@@ -766,7 +766,7 @@ function PickerV1({ size }: { size: FieldSize }) {
 // v0 — three SelectFieldSync fields under one label
 // ===========================================================================
 
-function PickerV0({ size }: { size: FieldSize }) {
+function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number }) {
   const [composite, setComposite] = useState<Composite>(EMPTY_COMPOSITE);
   const fieldsRef = useRef<HTMLDivElement>(null);
 
@@ -812,7 +812,11 @@ function PickerV0({ size }: { size: FieldSize }) {
             only the code and the dropdown row shows code + description. */}
         <Flex direction="column" gap="1">
           <FieldLabel>Budget Code</FieldLabel>
-          <div ref={fieldsRef} className="bcv0-fields">
+          <div
+            ref={fieldsRef}
+            className="bcv0-fields"
+            style={{ width: fieldWidth, maxWidth: "100%" }}
+          >
             {SEGMENT_ORDER.map((key, i) => {
               const projectItems = v0ProjectItemsFor(key);
               const plural = `${SEGMENTS[key].label}s`;
@@ -916,8 +920,18 @@ function PickerV0({ size }: { size: FieldSize }) {
 
 // ===========================================================================
 
+const FIELD_WIDTH_MIN = 200;
+const FIELD_WIDTH_MAX = 560;
+const FIELD_WIDTH_DEFAULT = 460;
+// Fraction along the track where the default sits (for the tick indicator).
+const FIELD_WIDTH_DEFAULT_PCT =
+  (FIELD_WIDTH_DEFAULT - FIELD_WIDTH_MIN) / (FIELD_WIDTH_MAX - FIELD_WIDTH_MIN);
+
 export default function BudgetCodePicker() {
   const [size, setSize] = useState<FieldSize>("medium");
+  // Constrains just the picker field container (not the whole card), so you can
+  // preview how each picker reflows as its available width shrinks.
+  const [fieldWidth, setFieldWidth] = useState(FIELD_WIDTH_DEFAULT);
 
   return (
     <Flex
@@ -934,24 +948,61 @@ export default function BudgetCodePicker() {
           <Text variant="headline" el="h1" size="medium">
             Budget Code Picker
           </Text>
-          <SegmentedControl
-            selected={size}
-            onChange={(value) => setSize(value as FieldSize)}
-          >
-            <SegmentedControl.Segment value="small">Small</SegmentedControl.Segment>
-            <SegmentedControl.Segment value="medium">
-              Medium
-            </SegmentedControl.Segment>
-          </SegmentedControl>
+          <div className="bc-controls">
+            {/* Field-width slider: shrinks the picker container in both cards. */}
+            <label className="bc-control">
+              <span className="bc-control-label">Field width</span>
+              <span className="bc-width-track">
+                {/* Drawn track + default marker sit below the native thumb, so
+                    the thumb (dot) covers the marker when at the default. */}
+                <span className="bc-width-trackline" aria-hidden="true" />
+                <span
+                  className="bc-width-default"
+                  style={{
+                    left: `calc(8px + ${FIELD_WIDTH_DEFAULT_PCT} * (100% - 16px))`,
+                  }}
+                  aria-hidden="true"
+                />
+                <input
+                  type="range"
+                  className="bc-width-slider"
+                  min={FIELD_WIDTH_MIN}
+                  max={FIELD_WIDTH_MAX}
+                  step={10}
+                  value={fieldWidth}
+                  onChange={(e) => setFieldWidth(Number(e.target.value))}
+                  aria-label="Picker field width"
+                />
+              </span>
+              <span className="bc-width-value">{fieldWidth}px</span>
+            </label>
+
+            <div className="bc-control">
+              <span className="bc-control-label">Field size</span>
+              <SegmentedControl
+                size="small"
+                selected={size}
+                onChange={(value) => setSize(value as FieldSize)}
+              >
+                <SegmentedControl.Segment value="small">
+                  Small
+                </SegmentedControl.Segment>
+                <SegmentedControl.Segment value="medium">
+                  Medium
+                </SegmentedControl.Segment>
+              </SegmentedControl>
+            </div>
+          </div>
         </Flex>
 
-        {/* v1 on the left, v0 on the right */}
+        {/* v1 on the left, v0 on the right; the slider above constrains just the
+            field container inside each, not the whole card. */}
         <Flex gap="4" alignItems="flex-start" wrap="wrap">
           <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV1 size={size} />
+            <PickerV1 size={size} fieldWidth={fieldWidth} />
           </div>
           <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV0 size={size} />
+            <PickerV0 size={size} fieldWidth={fieldWidth} />
           </div>
         </Flex>
       </Flex>

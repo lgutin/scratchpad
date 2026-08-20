@@ -243,6 +243,136 @@
   font-size: 12px;
 }
 
+/* ── Top-right controls (dev harness) — two shadcn-style boxes ───────── */
+.bc-controls {
+  display: inline-flex;
+  /* Stretch both boxes to the tallest so they match height. */
+  align-items: stretch;
+  gap: 12px;
+  font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+}
+
+/* Each control is its own bordered, rounded box (transparent fill). */
+.bc-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 1px solid var(--a2-border-color-subdued, #dfe0e1);
+  border-radius: 10px;
+  background: transparent;
+}
+
+/* Match the Anvil eyebrow labels used in the cards below (uppercase, spaced,
+   subdued) so the toolbar reads as part of the same type system. */
+.bc-control-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--a2-foreground-color-subdued, #606162);
+  white-space: nowrap;
+}
+
+.bc-width-value {
+  min-width: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+/* Shrink the SegmentedControl text to match the body copy below (Anvil ships
+   it at 16px; the segments are LABEL._segment_). */
+.bc-control [class*="segmented-control"],
+.bc-control [class*="segmented-control"] [class*="segment"] {
+  font-size: 13px !important;
+}
+
+.bc-width-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 160px;
+  height: 16px;
+}
+
+/* Track drawn as an underlay so the default marker can layer above it while the
+   native thumb still paints on top (the input is the last, topmost sibling). */
+.bc-width-trackline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--a2-border-color-default, #c2c8ce);
+  pointer-events: none;
+}
+
+/* Default-width marker: same height as the thumb and centered on the track, so
+   the thumb (dot) sits directly over it and hides it when at the default. */
+.bc-width-default {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--a2-foreground-color-subdued, #606162);
+  pointer-events: none;
+}
+
+.bc-width-slider {
+  position: relative;
+  width: 160px;
+  height: 16px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+/* Native track is transparent; the visual track is .bc-width-trackline. */
+.bc-width-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.bc-width-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.bc-width-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--a2-foreground-color-primary, #0265dc);
+  border: 2px solid var(--a2-background-color, #fff);
+  box-shadow: 0 1px 3px rgba(20, 20, 20, 0.2);
+}
+
+.bc-width-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--a2-foreground-color-primary, #0265dc);
+  border: 2px solid var(--a2-background-color, #fff);
+  box-shadow: 0 1px 3px rgba(20, 20, 20, 0.2);
+}
+
+.bc-width-slider:focus-visible {
+  outline: 2px solid var(--a2-foreground-color-primary, #0265dc);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
 /* ── v0: one label, three fields, periods between, no chevron ────────── */
 /* Grid with three equal 1fr columns (fields) + auto columns (separators) so
    the fields stay equal width and don't grow when a value adds the clear ×. */
