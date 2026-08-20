@@ -2,11 +2,14 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import {
   Button,
@@ -38,16 +41,10 @@ export const meta = {
 
 type SegmentKey = "cost-code" | "cost-type" | "phase";
 
-interface SegmentMeta {
-  label: string;
-  system: boolean; // ServiceTitan System vs tenant-created
-  color: string; // chip / accent color for the segment type
-}
-
-const SEGMENTS: Record<SegmentKey, SegmentMeta> = {
-  "cost-code": { label: "Cost Code", system: true, color: "#2f80ed" },
-  "cost-type": { label: "Cost Type", system: true, color: "#00875a" },
-  phase: { label: "Phase", system: false, color: "#8b5cf6" },
+const SEGMENTS: Record<SegmentKey, { label: string }> = {
+  "cost-code": { label: "Cost Code" },
+  "cost-type": { label: "Cost Type" },
+  phase: { label: "Phase" },
 };
 
 // A budget code is the composite of one item per segment, in this order.
@@ -58,7 +55,7 @@ type FieldSize = "small" | "medium";
 type BudgetOption = SelectFieldOption & {
   group: SegmentKey;
   token: string; // short form used in the assembled code, e.g. "01-100", "L", "Phase 1"
-  extra: { system: boolean; description?: string; onProject?: boolean };
+  extra: { description?: string; onProject?: boolean };
 };
 
 function costCode(
@@ -72,7 +69,7 @@ function costCode(
     label: `${code} \u00b7 ${description}`,
     group: "cost-code",
     token: code,
-    extra: { system: true, description, onProject },
+    extra: { description, onProject },
   };
 }
 
@@ -140,7 +137,7 @@ const COST_TYPES: BudgetOption[] = (
   label,
   group: "cost-type" as const,
   token,
-  extra: { system: true, onProject },
+  extra: { onProject },
 }));
 
 const PHASES: BudgetOption[] = [
@@ -157,7 +154,7 @@ const PHASES: BudgetOption[] = [
   label: `Phase ${i + 1} \u00b7 ${name}`,
   group: "phase",
   token: `Phase ${i + 1}`,
-  extra: { system: false, description: name, onProject: i < 3 },
+  extra: { description: name, onProject: i < 3 },
 }));
 
 const ITEMS_BY_SEGMENT: Record<SegmentKey, BudgetOption[]> = {
@@ -209,11 +206,61 @@ const EMPTY_COMPOSITE: Composite = {
   phase: null,
 };
 
+const SECTION_DIVIDER: CSSProperties = {
+  borderTop: "1px solid var(--a2-border-color-subdued, #dfe0e1)",
+  paddingTop: "var(--a2-size-4, 16px)",
+};
+
+function AssembledReadout({ value }: { value: string }) {
+  return (
+    <Flex direction="column" gap="2" style={SECTION_DIVIDER}>
+      <Text variant="eyebrow" size="small">
+        Assembled budget code
+      </Text>
+      <Text variant="headline" size="small" el="h3">
+        {value || "\u2014"}
+      </Text>
+    </Flex>
+  );
+}
+
+// Customizations note, written for an engineering audience (including Anvil
+// component authors weighing whether this level of customization is warranted).
+// `lead` frames the overall posture; each <li> is one concrete customization.
+function Customizations({
+  lead,
+  children,
+}: {
+  lead: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Flex direction="column" gap="2" style={SECTION_DIVIDER}>
+      <Text variant="eyebrow" size="small">
+        Customizations
+      </Text>
+      <Text variant="body" size="small" subdued>
+        {lead}
+      </Text>
+      <ul className="bc-notes">{children}</ul>
+    </Flex>
+  );
+}
+
 // ===========================================================================
 // v1 — segmented type-ahead field (per Anvil2 spec)
 // ===========================================================================
 
 const V1_SEP = " . ";
+
+// Popover.Trigger spreads combobox-ish aria state (aria-expanded / -haspopup)
+// onto the wrapper div, but in this custom control those belong on the active
+// <input role="combobox">. Drop them so the role-less shell stays clean.
+function stripAria(props: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(props).filter(([k]) => !k.startsWith("aria-")),
+  );
+}
 
 function segmentList(key: SegmentKey, text: string): BudgetOption[] {
   // Pinned (this-project) items first, then the rest; ordering holds while filtering.
@@ -234,10 +281,21 @@ function PickerV1({ size }: { size: FieldSize }) {
   const [hi, setHi] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [shellWidth, setShellWidth] = useState<number>(460);
+  // Polite status text announced to screen readers on commit / clear.
+  const [live, setLive] = useState("");
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const blurTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(blurTimer.current), []);
+
+  // Stable ids so the combobox input can point at the listbox + active option
+  // (aria-controls / aria-activedescendant) and the group at its label.
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  const listboxId = `${uid}-listbox`;
+  const optionId = (idx: number) => `${uid}-opt-${idx}`;
 
   const firstEmpty = useCallback((comp: Composite) => {
     for (let i = 0; i < SEGMENT_ORDER.length; i++) {
@@ -280,7 +338,14 @@ function PickerV1({ size }: { size: FieldSize }) {
       const allSet = SEGMENT_ORDER.every((k) => next[k]);
       const na = allSet ? 3 : firstEmpty(next);
       setActive(na);
-      if (na === 3) setMenuOpen(false);
+      if (na === 3) {
+        setMenuOpen(false);
+        setLive(
+          `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`,
+        );
+      } else {
+        setLive(`${SEGMENTS[SEGMENT_ORDER[active]].label} set to ${item.token}`);
+      }
     },
     [active, committed, firstEmpty],
   );
@@ -303,6 +368,7 @@ function PickerV1({ size }: { size: FieldSize }) {
 
   const clearSegment = useCallback((i: number) => {
     setCommitted((prev) => ({ ...prev, [SEGMENT_ORDER[i]]: null }));
+    setLive(`${SEGMENTS[SEGMENT_ORDER[i]].label} cleared`);
   }, []);
 
   const clearAll = useCallback(() => {
@@ -311,6 +377,7 @@ function PickerV1({ size }: { size: FieldSize }) {
     setText("");
     setHi(0);
     setMenuOpen(true);
+    setLive("Budget code cleared");
     inputRef.current?.focus();
   }, []);
 
@@ -320,29 +387,38 @@ function PickerV1({ size }: { size: FieldSize }) {
     // Commit the highlighted row (or keep an existing value) and advance —
     // shared by Enter, Tab, and Arrow Right.
     const confirmSelection = () => {
-      if (text.trim() && list.length) {
-        commitAndAdvance(list[hi] ?? list[0]);
-      } else if (!text.trim() && committed[key]) {
+      if (!text.trim() && committed[key]) {
         advanceKeep();
-      } else if (!text.trim() && list.length) {
+      } else if (list.length) {
         commitAndAdvance(list[hi] ?? list[0]);
       }
     };
     switch (e.key) {
       case "ArrowDown":
+        // APG combobox: if the popup is closed, ArrowDown opens it; otherwise
+        // move the visual + activedescendant highlight down.
         e.preventDefault();
+        if (!menuOpen) {
+          setMenuOpen(true);
+          break;
+        }
         setHi((h) => Math.min(h + 1, Math.max(list.length - 1, 0)));
         break;
       case "ArrowUp":
         e.preventDefault();
+        if (!menuOpen) {
+          setMenuOpen(true);
+          break;
+        }
         setHi((h) => Math.max(h - 1, 0));
         break;
       case "Enter":
-      case "Tab": {
         e.preventDefault();
         confirmSelection();
         break;
-      }
+      // Tab is intentionally NOT handled: it keeps its native behavior and moves
+      // focus out of the field (WCAG 2.4.3 focus order). Move between segments
+      // with ← / → instead; commit + advance with Enter or →.
       case "ArrowLeft":
         // Only navigate back when the caret is at the start of the text.
         if (e.currentTarget.selectionStart === 0 && text === "") {
@@ -369,8 +445,10 @@ function PickerV1({ size }: { size: FieldSize }) {
         }
         break;
       case "Escape":
+        // APG combobox: first Escape clears the query, then dismisses the popup.
         e.preventDefault();
-        setText("");
+        if (text) setText("");
+        else setMenuOpen(false);
         break;
     }
   };
@@ -397,7 +475,7 @@ function PickerV1({ size }: { size: FieldSize }) {
   // that sizes to its own content (CSS `field-sizing: content`) — the blue
   // highlight hugs the text with symmetric padding and switching the active
   // segment (same content) never changes width — no jumping.
-  const fieldParts: React.ReactNode[] = [];
+  const fieldParts: ReactNode[] = [];
   SEGMENT_ORDER.forEach((key, i) => {
     const committedItem = committed[key];
     const isActive = i === active && active < 3;
@@ -423,6 +501,14 @@ function PickerV1({ size }: { size: FieldSize }) {
         value={display}
         placeholder={ph}
         aria-label={SEGMENTS[key].label}
+        // APG combobox (list autocomplete) semantics on the active segment.
+        role={isActive ? "combobox" : undefined}
+        aria-autocomplete={isActive ? "list" : undefined}
+        aria-expanded={isActive ? open : undefined}
+        aria-controls={isActive && open ? listboxId : undefined}
+        aria-activedescendant={
+          isActive && open && list.length ? optionId(hi) : undefined
+        }
         size={1}
         onChange={
           isActive
@@ -468,6 +554,7 @@ function PickerV1({ size }: { size: FieldSize }) {
           return (
             <div
               key={item.id}
+              id={optionId(idx)}
               role="option"
               aria-selected={isCurrent}
               className={`bcv1-row${idx === hi ? " bcv1-row--hi" : ""}${
@@ -493,22 +580,40 @@ function PickerV1({ size }: { size: FieldSize }) {
           );
         };
 
+        const projHeaderId = `${uid}-grp-project`;
+        const restHeaderId = `${uid}-grp-rest`;
+        const restHeaderText =
+          projectRows.length > 0 ? `More ${plural}` : plural;
+
         return (
           <div className="bcv1-menu" style={{ width: shellWidth }}>
-            <div className="bcv1-list" role="listbox" aria-label={label}>
+            <div
+              className="bcv1-list"
+              role="listbox"
+              id={listboxId}
+              aria-label={label}
+            >
               {projectRows.length > 0 && (
-                <div className="bcv1-menu-header">{plural} · This project</div>
-              )}
-              {projectRows.map((item, i) => renderRow(item, i))}
-              {projectRows.length > 0 && restRows.length > 0 && (
-                <div className="bcv1-menu-hr" role="separator" />
-              )}
-              {restRows.length > 0 && (
-                <div className="bcv1-menu-header">
-                  {projectRows.length > 0 ? `More ${plural}` : plural}
+                <div role="group" aria-labelledby={projHeaderId}>
+                  <div id={projHeaderId} className="bcv1-menu-header">
+                    {plural} · This project
+                  </div>
+                  {projectRows.map((item, i) => renderRow(item, i))}
                 </div>
               )}
-              {restRows.map((item, i) => renderRow(item, projectRows.length + i))}
+              {projectRows.length > 0 && restRows.length > 0 && (
+                <div className="bcv1-menu-hr" role="separator" aria-hidden="true" />
+              )}
+              {restRows.length > 0 && (
+                <div role="group" aria-labelledby={restHeaderId}>
+                  <div id={restHeaderId} className="bcv1-menu-header">
+                    {restHeaderText}
+                  </div>
+                  {restRows.map((item, i) =>
+                    renderRow(item, projectRows.length + i),
+                  )}
+                </div>
+              )}
             </div>
             <div className="bcv1-footer">
               <Button
@@ -539,13 +644,14 @@ function PickerV1({ size }: { size: FieldSize }) {
             v1 · One field, type-ahead segments
           </Text>
           <Text variant="body" size="small" subdued>
-            Type to search each segment; press Enter, Tab, or → to confirm and
-            advance. Click a code to re-edit it; ← / → move between segments.
+            Type to search each segment; press Enter or → to confirm and advance.
+            Click a code to re-edit it; ← / → move between segments; Tab leaves the
+            field.
           </Text>
         </Flex>
 
         <Flex direction="column" gap="1">
-          <FieldLabel>Budget Code</FieldLabel>
+          <FieldLabel id={labelId}>Budget Code</FieldLabel>
           <div ref={wrapRef}>
             <Popover
               open={open}
@@ -558,7 +664,9 @@ function PickerV1({ size }: { size: FieldSize }) {
               <Popover.Trigger>
                 {(triggerProps: Record<string, unknown>) => (
                   <div
-                    {...triggerProps}
+                    {...stripAria(triggerProps)}
+                    role="group"
+                    aria-labelledby={labelId}
                     className={`bcv1-shell${size === "small" ? " bcv1-shell--small" : ""}`}
                     onClick={() => {
                       if (active >= 3) return;
@@ -590,90 +698,65 @@ function PickerV1({ size }: { size: FieldSize }) {
           </div>
         </Flex>
 
-        {/* Assembled output */}
-        <Flex
-          direction="column"
-          gap="2"
-          style={{
-            borderTop: "1px solid var(--a2-border-color-subdued, #dfe0e1)",
-            paddingTop: "var(--a2-size-4, 16px)",
-          }}
-        >
-          <Text variant="eyebrow" size="small">
-            Assembled budget code
-          </Text>
-          <Text variant="headline" size="small" el="h3">
-            {assembled || "\u2014"}
-          </Text>
-        </Flex>
+        {/* Polite status: announces each commit + the completed code to AT. */}
+        <div className="bcv1-sr-only" role="status" aria-live="polite">
+          {live}
+        </div>
 
-        {/* Notes — deviations & overrides */}
-        <Flex
-          direction="column"
-          gap="1"
-          style={{
-            borderTop: "1px solid var(--a2-border-color-subdued, #dfe0e1)",
-            paddingTop: "var(--a2-size-4, 16px)",
-          }}
+        <AssembledReadout value={assembled} />
+
+        <Customizations
+          lead={
+            <>
+              A ground-up build: Anvil ships no segmented / multi-token input, so
+              almost everything is custom. Worth weighing whether segmented entry
+              is common enough to warrant a shared component.
+            </>
+          }
         >
-          <Text variant="eyebrow" size="small">
-            Notes
-          </Text>
-          <ul className="bc-notes">
             <li>
-              Fully custom control: Anvil2 has no segmented multi-input field, so
-              the field shell, menu, and interactions are all hand-built.
+              <strong>No suitable primitive.</strong> Field shell, dropdown, and
+              interaction model are hand-built, not composed from{" "}
+              <code>SelectField</code> — the root customization.
             </li>
             <li>
-              Each segment is a native <code>&lt;input&gt;</code> (read-only when
-              not the active one), styled as a token.
+              <strong>Raw <code>&lt;input&gt;</code> segments</strong> (read-only
+              unless active), sized with CSS <code>field-sizing: content</code> so
+              switching segments never shifts layout. Leans on a newer CSS feature.
             </li>
             <li>
-              Inputs use CSS <code>field-sizing: content</code> to size to their
-              text — symmetric highlight-chip padding and no width jump when moving
-              between segments.
+              <strong>Bespoke listbox:</strong> a bare <code>Popover</code> +
+              hand-written rows, not <code>SelectField</code>'s menu —
+              re-implements the listbox semantics and a11y Anvil already owns.
             </li>
             <li>
-              The dropdown is a custom Anvil <code>Popover</code> with hand-written
-              rows (<code>.bcv1-*</code>), not Anvil's <code>SelectField</code>{" "}
-              menu.
+              <strong>Custom keyboard model:</strong> type-ahead; Enter / → commit
+              + advance; ← / → move between segments; Backspace steps back; Tab
+              exits; Escape clears then dismisses. Hand-built, no Anvil equivalent.
             </li>
             <li>
-              Two custom sections ("… · This project" / "More …") with headers —
-              no per-row "This project" chip.
+              <strong>Hand-wired ARIA:</strong> to hit WCAG 2.2 AA without a
+              primitive, the active input carries the APG combobox roles (
+              <code>role="combobox"</code>, <code>aria-expanded</code>,{" "}
+              <code>aria-controls</code>, <code>aria-activedescendant</code>), the
+              menu is a labelled <code>listbox</code> of <code>option</code>s in{" "}
+              <code>role="group"</code> sections, the field is a{" "}
+              <code>role="group"</code> tied to its label, and a polite{" "}
+              <code>aria-live</code> region announces commits — all things Anvil's
+              own components provide for free.
             </li>
             <li>
-              Selected row (blue background, blue code + description, check) is
-              custom CSS.
+              <strong>Custom visuals:</strong> section headers (vs a per-row
+              chip), selected row, and committed-token hover are hand-styled and
+              diverge from Anvil's option states.
             </li>
             <li>
-              Hovering a committed token shows a gray background (matching the menu
-              row hover), not blue text.
+              <strong>Reused unchanged:</strong> <code>Popover</code>,{" "}
+              <code>Icon</code>, <code>Button</code>, <code>FieldLabel</code>, and{" "}
+              <code>--a2-</code> tokens throughout (with a{" "}
+              <code>prefers-reduced-motion</code> guard on the shell transition).
             </li>
-            <li>
-              Reused Anvil components: <code>Popover</code>, <code>Icon</code>{" "}
-              (check + add), <code>Button</code> (full-width secondary add-item),
-              <code> FieldLabel</code>.
-            </li>
-            <li>
-              Custom keyboard model: type-ahead per segment; Enter / Tab / → to
-              confirm + advance; ← / → to move; Backspace to clear/step back;
-              Escape to clear the query.
-            </li>
-            <li>
-              The Small / Medium control (top right) drives a shell modifier that
-              shortens the field and text.
-            </li>
-            <li>
-              "." separators use the default (Nunito Sans) type — intentionally not
-              the heavier Sofia face used in v0.
-            </li>
-            <li>
-              All colors, spacing, and type use <code>--a2-</code> tokens (with
-              concrete fallbacks).
-            </li>
-          </ul>
-        </Flex>
+        </Customizations>
       </Flex>
     </Card>
   );
@@ -781,96 +864,51 @@ function PickerV0({ size }: { size: FieldSize }) {
           </div>
         </Flex>
 
-        <Flex
-          direction="column"
-          gap="2"
-          style={{
-            borderTop: "1px solid var(--a2-border-color-subdued, #dfe0e1)",
-            paddingTop: "var(--a2-size-4, 16px)",
-          }}
-        >
-          <Text variant="eyebrow" size="small">
-            Assembled budget code
-          </Text>
-          <Text variant="headline" size="small" el="h3">
-            {v0Assembled || "\u2014"}
-          </Text>
-        </Flex>
+        <AssembledReadout value={v0Assembled} />
 
-        {/* Notes — deviations & overrides */}
-        <Flex
-          direction="column"
-          gap="1"
-          style={{
-            borderTop: "1px solid var(--a2-border-color-subdued, #dfe0e1)",
-            paddingTop: "var(--a2-size-4, 16px)",
-          }}
+        <Customizations
+          lead={
+            <>
+              Stays on stock <code>SelectFieldSync</code>, pushing only as far as
+              its API and CSS allow — a gauge of how much design intent the shipped
+              component can meet, and which gaps are really Anvil feature requests.
+              Grouped: supported-API usage first, then overrides that reach past
+              the public surface.
+            </>
+          }
         >
-          <Text variant="eyebrow" size="small">
-            Notes
-          </Text>
-          <ul className="bc-notes">
             <li>
-              Built from three stock Anvil <code>SelectFieldSync</code> fields —
-              native menu, selected states, add-new, and search all come from
-              Anvil; the <code>size</code> prop (Small / Medium) is passed through.
+              <strong>Composition:</strong> three stock <code>SelectFieldSync</code>{" "}
+              fields (native menu, selected states, add-new, search, <code>size</code>),
+              one shared <code>FieldLabel</code> + <code>hideLabel</code>, in a CSS
+              grid so fields stay equal width when the clear × appears.
             </li>
             <li>
-              One shared "Budget Code" <code>FieldLabel</code>; each field uses{" "}
-              <code>hideLabel</code> and the three sit in a CSS grid joined by "."
-              separators.
+              <strong>Supported API:</strong> <code>label</code> = code,{" "}
+              <code>content</code> = code + description, <code>searchText</code> for
+              search; <code>pinned</code> ("This project", search-reactive) +{" "}
+              <code>groupToString</code> ("More …"); <code>onAddNewItem</code> /{" "}
+              <code>addItemLabel</code> footer.
             </li>
             <li>
-              Fields use a grid (<code>1fr auto 1fr auto 1fr</code>) so they stay
-              equal width and don't grow when the clear × appears.
+              <strong>Override (public-ish):</strong> hide the chevron via{" "}
+              <code>[aria-label="toggle menu"]</code>; fix all menus to{" "}
+              <code>width: 300px</code> and cap the scroller (~6 rows) instead of
+              Anvil's per-trigger sizing.
             </li>
             <li>
-              Each option's <code>label</code> is the code so the field shows the
-              code only; <code>content</code> renders code + description in the row;
-              <code> searchText</code> keeps the description searchable.
+              <strong>Override (brittle — internals):</strong> flip stacked option
+              content to a row with <code>!important</code> + 1-line clamp, and blue
+              the selected <em>description</em> too. Targets compiled classes (
+              <code>[class*="title"]</code>) and breaks on an Anvil restyle — a
+              signal the inline layout / selected-state should be supported.
             </li>
             <li>
-              Sections via Anvil's <code>pinned</code> ("… · This project", as a
-              search-reactive function so pinned items filter) and{" "}
-              <code>groupToString</code> ("More …") — no per-row chip.
+              <strong>Custom + style:</strong> auto-advance to the next field on
+              selection; "." separators use the heavier display face (Sofia Pro
+              Bold) per Figma.
             </li>
-            <li>
-              Stock add-new button via <code>onAddNewItem</code> /{" "}
-              <code>addItemLabel</code>.
-            </li>
-            <li>
-              CSS override: hide the dropdown chevron (
-              <code>[aria-label="toggle menu"]</code>).
-            </li>
-            <li>
-              CSS override: fix all menus to the same width (
-              <code>width: 300px</code>) instead of Anvil's per-field
-              trigger/content sizing.
-            </li>
-            <li>
-              CSS override: force Anvil's stacked option content (title over
-              description) inline with <code>!important</code> (Anvil sets{" "}
-              <code>flex-direction</code> inline) + 1-line clamp.
-            </li>
-            <li>
-              CSS override: blue the selected row's description too (Anvil only
-              blues the code).
-            </li>
-            <li>
-              CSS override: full-width footer hairline with the add button inset
-              (Anvil's gray footer surface kept); scroller capped to 300px so ~6
-              options show (matches v1).
-            </li>
-            <li>
-              Custom (not an Anvil feature): auto-advance focus + open the next
-              field after a selection; clear × restored.
-            </li>
-            <li>
-              "." separators use the heavier Anvil display face (Sofia Pro Bold,
-              <code> --a2-font-family-display</code>) per Figma.
-            </li>
-          </ul>
-        </Flex>
+        </Customizations>
       </Flex>
     </Card>
   );

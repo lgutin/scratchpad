@@ -1,7 +1,8 @@
-/* Budget Code Picker v1 — segmented type-ahead field + popover menu.
-   Uses --a2- Anvil tokens (names per hammer foundations inventory) with
-   concrete fallbacks from the Figma node's variables. Any rule that reaches
-   into Anvil internals or has no matching token is marked // DEVIATION. */
+/* Budget Code Picker styles — v1 custom segmented field + popover menu, plus
+   v0 (.bcv0-*) overrides on the stock Anvil SelectField. Uses --a2- Anvil
+   tokens (names per hammer foundations inventory) with concrete fallbacks from
+   the Figma node's variables. Rules that reach into Anvil internals or have no
+   matching token are marked DEVIATION. */
 
 /* ── Field shell ─────────────────────────────────────────────────────── */
 /* DEVIATION: Anvil2 has no segmented multi-input field primitive, so the
@@ -13,7 +14,9 @@
   gap: 0;
   width: 100%;
   min-height: 44px;
-  padding: 0 8px 0 14px;
+  /* Left inset = shell padding (8px) + first input padding (4px) = 12px, to
+     match Anvil SelectField's text offset from the border. */
+  padding: 0 8px;
   box-sizing: border-box;
   overflow: hidden;
   border: 1px solid var(--a2-border-color-default, #c2c8ce);
@@ -30,15 +33,35 @@
   outline-offset: 2px;
 }
 
+/* Respect reduced-motion (Anvil a11y requirement): drop the shell transition. */
+@media (prefers-reduced-motion: reduce) {
+  .bcv1-shell {
+    transition: none;
+  }
+}
+
+/* Visually-hidden but screen-reader-available (polite status region). */
+.bcv1-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Small size: shorter field + smaller text, mirroring Anvil SelectField size. */
 .bcv1-shell--small {
   min-height: 32px;
-  padding: 0 6px 0 12px;
+  padding: 0 6px;
 }
 
 .bcv1-shell--small .bcv1-input {
   font-size: 14px;
-  padding: 4px 6px;
+  padding: 4px 4px;
 }
 
 .bcv1-shell--small .bcv1-sep {
@@ -58,7 +81,7 @@
   /* Size the input to its own content so the blue highlight hugs the text with
      symmetric left/right padding (no ch-based over-width on the right). */
   field-sizing: content;
-  padding: 6px 6px;
+  padding: 6px 4px;
   box-sizing: content-box;
   margin: 0;
   background: transparent;
@@ -178,22 +201,8 @@
   white-space: nowrap;
 }
 
-/* DEVIATION: Anvil Badge is a notification dot; the outlined success pill in
-   the Figma spec is a custom span using success tokens. */
-.bcv1-pill {
-  flex: none;
-  padding: 1px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-  border-radius: 999px;
-  background: var(--a2-background-color-success-subdued, #cef8e0);
-  border: 1px solid var(--a2-border-color-success, #1fda6f);
-  color: var(--a2-color-green-700, #157a3f);
-}
-
-/* Fixed-width trailing slot: reserved even without a check so the "This
-   project" pill (and row content) aligns vertically across all rows. */
+/* Fixed-width trailing slot: reserved even without a check so row content
+   aligns vertically across all rows. */
 .bcv1-check {
   flex: none;
   width: 18px;
@@ -218,12 +227,7 @@
   justify-content: center;
 }
 
-.bcv1-helper {
-  font-size: 12px;
-  color: var(--a2-foreground-color-subdued, #606162);
-}
-
-/* Notes: exhaustive deviations/overrides list on each card. */
+/* Customizations: the list of customizations/overrides on each card. */
 .bc-notes {
   margin: 0;
   padding-left: 18px;
