@@ -857,9 +857,9 @@ function PickerV0({ size }: { size: FieldSize }) {
               blues the code).
             </li>
             <li>
-              CSS override: white footer surface with a full-width hairline and
-              the add button inset (white space on its sides); scroller capped to
-              300px so ~6 options show (matches v1).
+              CSS override: full-width footer hairline with the add button inset
+              (Anvil's gray footer surface kept); scroller capped to 300px so ~6
+              options show (matches v1).
             </li>
             <li>
               Custom (not an Anvil feature): auto-advance focus + open the next

@@ -288,11 +288,8 @@
   --a2-mod-option-content-description-line-clamp: 1;
 }
 
-/* Footer: keep the hairline full-width but give the add button white space on
-   its left/right — white surface + Anvil's default size-2 inset around it. */
-[class*="options-popover-footer"] {
-  background: var(--a2-background-color, #fff) !important;
-}
+/* Footer keeps Anvil's default gray surface (background-color-strong), a
+   full-width hairline, and the add button inset by size-2 on each side. */
 
 /* Cap the scroll area so v0 menus show ~6 options like v1 (Anvil leaves it
    uncapped, so the menu grows to all options). Matches v1's 300px list. */
