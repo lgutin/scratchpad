@@ -769,6 +769,13 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
 function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number }) {
   const [composite, setComposite] = useState<Composite>(EMPTY_COMPOSITE);
   const fieldsRef = useRef<HTMLDivElement>(null);
+  const labelId = `${useId()}-label`;
+
+  // Latest committed selection + the last value the user typed per field, read
+  // by the blur listener below (which runs outside React's render cycle).
+  const compositeRef = useRef(composite);
+  compositeRef.current = composite;
+  const lastTypedRef = useRef<Record<number, string>>({});
 
   const setSegment = (segment: SegmentKey, option: SelectFieldOption | null) =>
     setComposite((prev) => ({ ...prev, [segment]: option as BudgetOption | null }));
@@ -776,6 +783,8 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
   // On selecting a value, auto-advance to the next field (focus + open it).
   const selectAndAdvance = (index: number, option: SelectFieldOption | null) => {
     setSegment(SEGMENT_ORDER[index], option);
+    // A real selection supersedes any stale "typed empty" so blur won't clear it.
+    delete lastTypedRef.current[index];
     if (option && index < SEGMENT_ORDER.length - 1) {
       setTimeout(() => {
         const inputs =
@@ -788,6 +797,40 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
       }, 0);
     }
   };
+
+  // SelectFieldSync is controlled by `value` and reverts the input text to the
+  // selected option on blur — so clearing a field's text via keyboard and
+  // tabbing away would restore the old value. Track the user's last typed value
+  // per field and, on blur, clear the segment when it was emptied.
+  useEffect(() => {
+    const root = fieldsRef.current;
+    if (!root) return;
+    const indexOf = (target: EventTarget | null) => {
+      const inputs = Array.from(
+        root.querySelectorAll<HTMLInputElement>(".bcv0-field input"),
+      );
+      return inputs.indexOf(target as HTMLInputElement);
+    };
+    const onInput = (e: Event) => {
+      const i = indexOf(e.target);
+      if (i >= 0) lastTypedRef.current[i] = (e.target as HTMLInputElement).value;
+    };
+    const onFocusOut = (e: Event) => {
+      const i = indexOf(e.target);
+      if (i < 0) return;
+      const key = SEGMENT_ORDER[i];
+      if (lastTypedRef.current[i] === "" && compositeRef.current[key]) {
+        setComposite((prev) => ({ ...prev, [key]: null }));
+      }
+      delete lastTypedRef.current[i];
+    };
+    root.addEventListener("input", onInput, true);
+    root.addEventListener("focusout", onFocusOut, true);
+    return () => {
+      root.removeEventListener("input", onInput, true);
+      root.removeEventListener("focusout", onFocusOut, true);
+    };
+  }, []);
 
   // Like v1: only expose the assembled code once all segments are set.
   const v0Assembled = SEGMENT_ORDER.every((key) => composite[key])
@@ -811,10 +854,15 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
             chevron (per Figma). Per-field labels are hidden; the field shows
             only the code and the dropdown row shows code + description. */}
         <Flex direction="column" gap="1">
-          <FieldLabel>Budget Code</FieldLabel>
+          <FieldLabel id={labelId}>Budget Code</FieldLabel>
+          {/* Group the three fields under the shared "Budget Code" label; each
+              field keeps its own distinct label (Cost Code / Cost Type / Phase)
+              so screen readers announce e.g. "Budget Code group, Cost Code". */}
           <div
             ref={fieldsRef}
             className="bcv0-fields"
+            role="group"
+            aria-labelledby={labelId}
             style={{ width: fieldWidth, maxWidth: "100%" }}
           >
             {SEGMENT_ORDER.map((key, i) => {
@@ -895,6 +943,13 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
               <code>addItemLabel</code> footer.
             </li>
             <li>
+              <strong>A11y:</strong> each field keeps a distinct label (Cost Code
+              / Cost Type / Phase) via <code>label</code> + <code>hideLabel</code>,
+              wrapped in a <code>role="group"</code> tied to the shared "Budget
+              Code" label — so a screen reader announces the group context plus
+              each segment. (Reviewer: fine as long as each gets a distinct label.)
+            </li>
+            <li>
               <strong>Override (public-ish):</strong> hide the chevron via{" "}
               <code>[aria-label="toggle menu"]</code>; fix all menus to{" "}
               <code>width: 300px</code> and cap the scroller (~6 rows) instead of
@@ -908,9 +963,14 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
               signal the inline layout / selected-state should be supported.
             </li>
             <li>
-              <strong>Custom + style:</strong> auto-advance to the next field on
-              selection; "." separators use the heavier display face (Sofia Pro
-              Bold) per Figma.
+              <strong>Custom behavior:</strong> auto-advance to the next field on
+              selection; clear the segment when its text is emptied and blurred
+              (stock <code>SelectFieldSync</code> otherwise restores the old value
+              on blur).
+            </li>
+            <li>
+              <strong>Style:</strong> "." separators use the heavier display face
+              (Sofia Pro Bold) per Figma.
             </li>
         </Customizations>
       </Flex>
