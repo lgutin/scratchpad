@@ -95,16 +95,27 @@
   cursor: pointer;
 }
 
-/* Hover a committed token: gray background (like the menu row hover), not blue text. */
-.bcv1-input--token:hover {
-  background: var(--a2-background-color-strong-hover, #ececed);
-  border-radius: 4px;
+/* Empty, non-active segment: just a placeholder — not hoverable or clickable.
+   pointer-events:none drops the hover highlight and lets clicks fall through to
+   the shell (which focuses the current frontier segment). */
+.bcv1-input--empty {
+  pointer-events: none;
 }
 
-/* DEVIATION: re-editing highlight mirrors TextField's .highlight internal. */
-.bcv1-input--highlight {
-  background: var(--a2-background-color-primary-subdued, #e0f2ff);
-  border-radius: 4px;
+/* Hover a committed token: gray highlight. Clipped to the content box so it
+   covers exactly the text — the same extent as the blue ::selection shown when
+   the segment is being re-edited (not the full padded box). */
+.bcv1-input--token:hover {
+  background: var(--a2-background-color-strong-hover, #ececed);
+  background-clip: content-box;
+}
+
+/* Re-editing a committed segment selects its token (see the focus effect); the
+   native text selection is the highlight — no blue chip. Style ::selection so
+   it reads as an intentional highlight. */
+.bcv1-input::selection {
+  background: var(--a2-background-color-primary-subdued, #cce3ff);
+  color: var(--a2-foreground-color, #141414);
 }
 
 .bcv1-sep {
@@ -121,6 +132,9 @@
 /* ── Popover menu ────────────────────────────────────────────────────── */
 .bcv1-menu {
   font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+  /* Match v0's fixed menu width as a floor so the menu stays readable when the
+     field is narrow (the inline width still lets it grow with a wider field). */
+  min-width: 300px;
   overflow: hidden;
   border-radius: var(--a2-border-radius-md, 6px);
 }
@@ -386,6 +400,21 @@
 .bcv0-field {
   min-width: 0;
   position: relative;
+  container-type: inline-size;
+}
+
+/* At narrow segment widths the clear × crowds the value. Hide it (the value can
+   still be cleared by deleting the text) and give its reserved space back. */
+@container (max-width: 130px) {
+  .bcv0-field [class*="close-button"] {
+    display: none !important;
+  }
+  /* Extra .bcv0-field specificity so this beats the base filled rule's
+     `padding-right: 32px !important` regardless of source order — reclaims the
+     ×'s reserved space so the value fills more of the field. */
+  .bcv0-field.bcv0-field--filled [class*="input-wrapper"] {
+    padding-right: 8px !important;
+  }
 }
 
 /* Hide the native placeholder text (kept present so :placeholder-shown still

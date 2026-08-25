@@ -296,6 +296,9 @@ function PickerV1({
   const [shellWidth, setShellWidth] = useState<number>(460);
   // Polite status text announced to screen readers on commit / clear.
   const [live, setLive] = useState("");
+  // True right after re-editing a committed segment: its token is in the input
+  // (selected) but the menu should still show the full list, not filter to it.
+  const [prefilled, setPrefilled] = useState(false);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -320,14 +323,22 @@ function PickerV1({
   const navMax = Math.min(firstEmpty(committed), RESTING - 1);
   const activeKey = active < RESTING ? SEGMENT_ORDER[active] : null;
   const list = useMemo(
-    () => (activeKey ? segmentList(activeKey, text) : []),
-    [activeKey, text],
+    // While prefilled (token selected on re-edit), show the full list so the
+    // user can pick a different value; typing clears the flag and filters.
+    () => (activeKey ? segmentList(activeKey, prefilled ? "" : text) : []),
+    [activeKey, text, prefilled],
   );
   const open = menuOpen && active < RESTING;
 
-  // Keep the active input focused while editing.
+  // Keep the active input focused while editing, and select any prefilled text
+  // (re-editing a committed segment) so typing replaces it — the "select all"
+  // highlight, in place of a chip. No-op when advancing to an empty segment.
   useEffect(() => {
-    if (active < RESTING) inputRef.current?.focus();
+    if (active < RESTING) {
+      const el = inputRef.current;
+      el?.focus();
+      el?.select();
+    }
   }, [active, RESTING]);
 
   // Match the popover width to the field.
@@ -341,40 +352,57 @@ function PickerV1({
     return () => ro.disconnect();
   }, []);
 
+  const editSegment = (i: number) => {
+    const key = SEGMENT_ORDER[i];
+    const item = committed[key];
+    setActive(i);
+    // Prefill the committed token so it's the input value and gets selected
+    // (see the focus effect) — typing replaces it, like v0's select-all.
+    setText(item?.token ?? "");
+    setPrefilled(!!item);
+    // Highlight the current value's row in the full list so Enter keeps it.
+    const full = segmentList(key, "");
+    const idx = item ? full.findIndex((o) => o.id === item.id) : 0;
+    setHi(idx >= 0 ? idx : 0);
+    setMenuOpen(true);
+  };
+
+  // Land on the resting (done) state once past the last segment.
+  const rest = () => {
+    setText("");
+    setPrefilled(false);
+    setHi(0);
+    setActive(RESTING);
+    setMenuOpen(false);
+  };
+
   const commitAndAdvance = (item: BudgetOption) => {
     if (active >= RESTING) return;
-    const next = { ...committed, [SEGMENT_ORDER[active]]: item };
+    const key = SEGMENT_ORDER[active];
+    const next = { ...committed, [key]: item };
     setCommitted(next);
-    setText("");
-    setHi(0);
-    const allSet = SEGMENT_ORDER.every((k) => next[k]);
-    const na = allSet ? RESTING : firstEmpty(next);
-    setActive(na);
-    if (na === RESTING) {
-      setMenuOpen(false);
+    const na = active + 1;
+    if (na >= RESTING) {
+      rest();
+      const allSet = SEGMENT_ORDER.every((k) => next[k]);
       setLive(
-        `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`,
+        allSet
+          ? `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`
+          : `${SEGMENTS[key].label} set to ${item.token}`,
       );
     } else {
-      setLive(`${SEGMENTS[SEGMENT_ORDER[active]].label} set to ${item.token}`);
+      // Always step to — and highlight — the next segment, including when the
+      // code was already complete and you re-edited an earlier segment.
+      setLive(`${SEGMENTS[key].label} set to ${item.token}`);
+      editSegment(na);
     }
   };
 
   const advanceKeep = () => {
-    const allSet = SEGMENT_ORDER.every((k) => committed[k]);
-    const na = allSet ? RESTING : firstEmpty(committed);
-    setText("");
-    setHi(0);
-    setActive(na);
-    if (na === RESTING) setMenuOpen(false);
+    const na = active + 1;
+    if (na >= RESTING) rest();
+    else editSegment(na);
   };
-
-  const editSegment = useCallback((i: number) => {
-    setActive(i);
-    setText("");
-    setHi(0);
-    setMenuOpen(true);
-  }, []);
 
   const clearSegment = (i: number) => {
     setCommitted((prev) => ({ ...prev, [SEGMENT_ORDER[i]]: null }));
@@ -518,8 +546,10 @@ function PickerV1({
       : committedItem
         ? ""
         : SEGMENTS[key].label;
-    // Clicking an empty segment beyond the frontier snaps to the frontier.
-    const clickTarget = committedItem ? i : Math.min(i, navMax);
+    // Only committed (filled) segments are re-editable — hoverable + clickable.
+    // Empty, non-active segments are just placeholders: not hoverable/clickable.
+    const isToken = !isActive && !!committedItem;
+    const isEmptyRest = !isActive && !committedItem;
 
     const node = (
       <input
@@ -527,8 +557,8 @@ function PickerV1({
         ref={isActive ? inputRef : undefined}
         readOnly={!isActive}
         tabIndex={isActive ? 0 : -1}
-        className={`bcv1-input${!isActive ? " bcv1-input--token" : ""}${
-          isActive && committedItem ? " bcv1-input--highlight" : ""
+        className={`bcv1-input${isToken ? " bcv1-input--token" : ""}${
+          isEmptyRest ? " bcv1-input--empty" : ""
         }`}
         value={display}
         placeholder={ph}
@@ -546,6 +576,7 @@ function PickerV1({
           isActive
             ? (e) => {
                 setText(e.target.value);
+                setPrefilled(false); // real typing → filter by the query
                 setHi(0);
                 setMenuOpen(true);
               }
@@ -554,7 +585,7 @@ function PickerV1({
         onFocus={isActive ? () => setMenuOpen(true) : undefined}
         onBlur={isActive ? onInputBlur : undefined}
         onKeyDown={isActive ? onInputKeyDown : undefined}
-        onClick={!isActive ? () => editSegment(clickTarget) : undefined}
+        onClick={isToken ? () => editSegment(i) : undefined}
       />
     );
 
@@ -700,7 +731,24 @@ function PickerV1({
                     role="group"
                     aria-labelledby={labelId}
                     className={`bcv1-shell${size === "small" ? " bcv1-shell--small" : ""}`}
-                    onClick={() => {
+                    onClick={(e) => {
+                      // Clicking the empty shell area to the right of the last
+                      // segment re-edits that segment (select-all), like clicking
+                      // the token itself.
+                      if (e.target === e.currentTarget) {
+                        const inputs =
+                          e.currentTarget.querySelectorAll("input");
+                        const lastInput = inputs[inputs.length - 1];
+                        const lastIndex = SEGMENT_ORDER.length - 1;
+                        if (
+                          lastInput &&
+                          e.clientX > lastInput.getBoundingClientRect().right &&
+                          committed[SEGMENT_ORDER[lastIndex]]
+                        ) {
+                          editSegment(lastIndex);
+                          return;
+                        }
+                      }
                       if (active >= RESTING) return;
                       setMenuOpen(true);
                       inputRef.current?.focus();
@@ -893,9 +941,18 @@ function PickerV0({
     const onFocusIn = (e: Event) => {
       const i = indexOf(e.target);
       if (i < 0) return;
+      const input = e.target as HTMLInputElement;
       const key = keysRef.current[i];
-      if (key && compositeRef.current[key]) return; // keep an existing value
-      highlightFirst(e.target as HTMLInputElement, i);
+      if (key && compositeRef.current[key]) {
+        // Filled segment: select its code so typing immediately replaces it
+        // (fast re-search). Deferred so Anvil's focus→open-menu doesn't clobber
+        // the selection. Non-destructive — tab/click away keeps the value.
+        window.setTimeout(() => {
+          if (document.activeElement === input && input.value) input.select();
+        }, 0);
+        return;
+      }
+      highlightFirst(input, i);
     };
 
     // Typing "." or pressing Tab commits the highlighted option and advances.
