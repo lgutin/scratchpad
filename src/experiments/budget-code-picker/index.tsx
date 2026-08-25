@@ -224,9 +224,40 @@ function AssembledReadout({ value }: { value: string }) {
   );
 }
 
-// Customizations note, written for an engineering audience (including Anvil
-// component authors weighing whether this level of customization is warranted).
-// `lead` frames the overall posture; each <li> is one concrete customization.
+// A titled bulleted section (Pros / Cons) with a blue Show/Hide eyebrow toggle,
+// collapsed by default — same treatment as Customizations.
+function EvalSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true); // Pros/Cons shown by default
+  return (
+    <Flex direction="column" gap="1" style={SECTION_DIVIDER}>
+      <Flex justifyContent="space-between" alignItems="center" gap="2">
+        <Text variant="eyebrow" size="small">
+          {title}
+        </Text>
+        <button
+          type="button"
+          className="bc-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Hide" : "Show"}
+        </button>
+      </Flex>
+      {open && <ul className="bc-notes">{children}</ul>}
+    </Flex>
+  );
+}
+
+// Customizations, collapsed by default behind a small blue Show/Hide eyebrow
+// toggle to the right of the section header. Written for an engineering audience
+// (including Anvil authors weighing whether this level of customization is
+// warranted). `lead` frames the posture; each <li> is one concrete change.
 function Customizations({
   lead,
   children,
@@ -234,15 +265,30 @@ function Customizations({
   lead: ReactNode;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
   return (
     <Flex direction="column" gap="2" style={SECTION_DIVIDER}>
-      <Text variant="eyebrow" size="small">
-        Customizations
-      </Text>
-      <Text variant="body" size="small" subdued>
-        {lead}
-      </Text>
-      <ul className="bc-notes">{children}</ul>
+      <Flex justifyContent="space-between" alignItems="center" gap="2">
+        <Text variant="eyebrow" size="small">
+          Customizations
+        </Text>
+        <button
+          type="button"
+          className="bc-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Hide" : "Show"}
+        </button>
+      </Flex>
+      {open && (
+        <>
+          <Text variant="body" size="small" subdued>
+            {lead}
+          </Text>
+          <ul className="bc-notes">{children}</ul>
+        </>
+      )}
     </Flex>
   );
 }
@@ -785,6 +831,54 @@ function PickerV1({
 
         <AssembledReadout value={assembled} />
 
+        <EvalSection title="Pros">
+          <li>
+            <strong>One identifier, one field.</strong> Matches how people think
+            of a budget code; a single clear × wipes the whole code, and one
+            popover means no per-segment menus to size or align.
+          </li>
+          <li>
+            <strong>Fast, keyboard-first entry.</strong> Type-ahead; Enter / Tab /
+            → / "." advance; first row highlighted on open; select-all on re-edit;
+            click right of the last segment to re-edit; committing steps to the
+            next segment.
+          </li>
+          <li>
+            <strong>Cleaner across screen sizes.</strong> Scales as one field
+            with no layout jump (<code>field-sizing: content</code>) — tighter fit
+            than N separate fields (esp. in dense tables).
+          </li>
+          <li>
+            <strong>Meets the a11y bar.</strong> Built to WCAG 2.2 AA (APG
+            combobox, live region) — addresses the earlier design-system
+            keyboard/accessibility flag.
+          </li>
+        </EvalSection>
+
+        <EvalSection title="Cons">
+          <li>
+            <strong>Actually the least conservative option.</strong> Anvil ships
+            no segmented primitive, so the shell, menu, keyboard model, and a11y
+            are all hand-built — the opposite of the "fewer overrides / DS
+            precedent" reason some favored a combined field. (Holds only if
+            "combined" is reimagined as a single parsed text field.)
+          </li>
+          <li>
+            <strong>Re-implements Anvil.</strong> Listbox semantics, focus
+            management, and selected states duplicate what <code>SelectField</code>{" "}
+            already provides; larger code + maintenance surface.
+          </li>
+          <li>
+            <strong>"." advance isn't obvious.</strong> In a single visual field
+            it's not apparent that "." acts like Tab (mitigated by helper text).
+          </li>
+          <li>
+            <strong>Newer-CSS reliance + review burden.</strong> Leans on{" "}
+            <code>field-sizing</code> and <code>:has()</code>; the bespoke a11y
+            still warrants a formal review before productizing.
+          </li>
+        </EvalSection>
+
         <Customizations
           lead={
             <>
@@ -827,15 +921,25 @@ function PickerV1({
               own components provide for free.
             </li>
             <li>
+              <strong>Re-edit model:</strong> clicking a committed token (or the
+              empty space right of the last segment) selects its text via native{" "}
+              <code>::selection</code> (no chip); the menu shows the full list
+              with the current value highlighted; committing steps to the next
+              segment. Empty segments are non-interactive (
+              <code>pointer-events: none</code>).
+            </li>
+            <li>
               <strong>Custom visuals:</strong> section headers (vs a per-row
-              chip), selected row, and committed-token hover are hand-styled and
-              diverge from Anvil's option states.
+              chip), selected row, and a committed-token hover clipped to the
+              content box (<code>background-clip</code>) so it matches the
+              selection — all hand-styled, diverging from Anvil's option states.
             </li>
             <li>
               <strong>Reused unchanged:</strong> <code>Popover</code>,{" "}
               <code>Icon</code>, <code>Button</code>, <code>FieldLabel</code>, and{" "}
               <code>--a2-</code> tokens throughout (with a{" "}
-              <code>prefers-reduced-motion</code> guard on the shell transition).
+              <code>prefers-reduced-motion</code> guard on the shell transition);
+              the menu borrows v0's 300px min-width.
             </li>
         </Customizations>
       </Flex>
@@ -1115,6 +1219,54 @@ function PickerV0({
 
         <AssembledReadout value={v0Assembled} />
 
+        <EvalSection title="Pros">
+          <li>
+            <strong>The conservative choice.</strong> Stock <code>SelectField</code>{" "}
+            with lighter overrides and DS precedent — the low-customization option,
+            and off the deprecated <code>Combobox</code> cliff (removed in Anvil2
+            5.0) that production uses today.
+          </li>
+          <li>
+            <strong>A11y &amp; behavior for free.</strong> Keyboard, screen-reader
+            semantics, selected states, and search come from Anvil; much of the
+            design is met with supported props (<code>pinned</code>,{" "}
+            <code>groupToString</code>, <code>onAddNewItem</code>).
+          </li>
+          <li>
+            <strong>Separate segments = natural affordances.</strong> Auto-advance
+            and highlight-on-partial-match come easily since fields are already
+            distinct; each is a familiar combobox.
+          </li>
+          <li>
+            <strong>Per-segment clear is possible</strong> (though rarely used, so
+            the × is hidden at narrow widths and delete-to-clear covers it).
+          </li>
+        </EvalSection>
+
+        <EvalSection title="Cons">
+          <li>
+            <strong>Wider footprint.</strong> N separate fields take more
+            horizontal space and get tight in dense tables — the main strike vs. a
+            single combined field.
+          </li>
+          <li>
+            <strong>Per-segment popovers.</strong> Each field has its own menu, so
+            width/alignment need overrides — no single shared dropdown like v1.
+          </li>
+          <li>
+            <strong>Brittle internal overrides.</strong> Hitting the design needs{" "}
+            <code>!important</code> hacks on compiled class names (inline option
+            layout, selected color, chevron hide) that can break on an Anvil
+            restyle; narrow-width handling (input shrink, hide-× query, placeholder
+            overlay) is manual.
+          </li>
+          <li>
+            <strong>Behaviors bolted on.</strong> Highlight-on-open, Tab-accept,
+            "."-advance, clear-on-empty, and select-all-on-focus live outside Anvil
+            in extra listeners.
+          </li>
+        </EvalSection>
+
         <Customizations
           lead={
             <>
@@ -1161,12 +1313,20 @@ function PickerV0({
               signal the inline layout / selected-state should be supported.
             </li>
             <li>
+              <strong>Override (narrow widths):</strong> shrink the input below
+              Anvil's ~100px min-width; a container query hides the clear × once a
+              segment is narrow and reclaims its reserved right padding; the
+              placeholder is a custom overlay (<code>:has(:placeholder-shown)</code>)
+              that ellipsizes consistently whether focused or blurred.
+            </li>
+            <li>
               <strong>Custom behavior:</strong> opening an empty field highlights
               its first option (Anvil doesn't), and Tab accepts the highlight;
               auto-advance to the next field on selection; typing "." commits the
-              top match and advances; clear the segment when its text is emptied
-              and blurred (stock <code>SelectFieldSync</code> otherwise restores
-              the old value on blur).
+              top match and advances; focusing a filled segment selects its code
+              (fast re-search); clear the segment when its text is emptied and
+              blurred (stock <code>SelectFieldSync</code> otherwise restores the
+              old value on blur).
             </li>
             <li>
               <strong>Style:</strong> "." separators use the heavier display face

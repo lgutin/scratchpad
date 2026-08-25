@@ -257,6 +257,32 @@
   font-size: 12px;
 }
 
+/* Small blue "Show / Hide" eyebrow toggle to the right of a section header. */
+.bc-toggle {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+  /* Match Anvil eyebrow (size="small") section headings. */
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--a2-foreground-color-primary, #0265dc);
+}
+
+.bc-toggle:hover {
+  text-decoration: underline;
+}
+
+.bc-toggle:focus-visible {
+  outline: 2px solid var(--a2-foreground-color-primary, #0265dc);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* ── Top-right controls (dev harness) — two shadcn-style boxes ───────── */
 .bc-controls {
   display: inline-flex;
