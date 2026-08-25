@@ -385,12 +385,67 @@
 
 .bcv0-field {
   min-width: 0;
+  position: relative;
 }
 
-/* Lock each field's SelectField to its column so the clear × can't widen it. */
-.bcv0-field > * {
+/* Hide the native placeholder text (kept present so :placeholder-shown still
+   matches) and render it via .bcv0-ph, which ellipsizes consistently whether
+   the input is focused or blurred. */
+.bcv0-field input::placeholder {
+  color: transparent !important;
+}
+
+.bcv0-ph {
+  display: none;
+  position: absolute;
+  /* Aligns with the input text: field border (1px) + input padding (12px). */
+  left: 13px;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2; /* above the input's opaque background */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  color: var(--a2-foreground-color-subtle, #8b8b8b);
+  font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+  line-height: 1.4;
+}
+
+.bcv0-field:has(input:placeholder-shown) .bcv0-ph {
+  display: block;
+}
+
+/* Lock each field's SelectField to its column so the clear × can't widen it.
+   Exclude the placeholder overlay, which is absolutely positioned (left+right)
+   and must not be forced to width:100% (that would push it past the border). */
+.bcv0-field > *:not(.bcv0-ph) {
   width: 100%;
-  min-width: 0;
+}
+
+/* Anvil's input keeps a ~100px flex-basis/min-width; at narrow columns that
+   makes the placeholder spill past the field border into the separators. Let
+   the input (and its wrappers) shrink to the column and ellipsize instead. */
+.bcv0-field * {
+  min-width: 0 !important;
+}
+
+.bcv0-field input {
+  flex-basis: 0 !important;
+  text-overflow: ellipsis;
+}
+
+/* Anvil reserves ~72px on the input's right for the clear + chevron buttons.
+   We hide the chevron, so most of that is dead space. Reserve room for the
+   clear × only when the field is filled (× shown); an empty field uses the
+   space for its placeholder so it doesn't clip at narrow widths. */
+.bcv0-field [class*="input-wrapper"] {
+  padding-right: 8px !important;
+}
+
+.bcv0-field--filled [class*="input-wrapper"] {
+  padding-right: 32px !important;
 }
 
 .bcv0-sep {

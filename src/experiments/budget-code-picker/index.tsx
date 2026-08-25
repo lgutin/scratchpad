@@ -274,9 +274,22 @@ function segmentList(key: SegmentKey, text: string): BudgetOption[] {
   );
 }
 
-function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number }) {
+function PickerV1({
+  size,
+  fieldWidth,
+  keys,
+}: {
+  size: FieldSize;
+  fieldWidth: number;
+  keys: SegmentKey[];
+}) {
+  // Only the first N segments are active (driven by the Field count control).
+  // Shadows the module SEGMENT_ORDER so the rest of the component is unchanged.
+  const SEGMENT_ORDER = keys;
+  const RESTING = SEGMENT_ORDER.length; // `active` index meaning "done / resting"
+
   const [committed, setCommitted] = useState<Composite>(EMPTY_COMPOSITE);
-  const [active, setActive] = useState<number>(0); // 0..2 editing, 3 resting
+  const [active, setActive] = useState<number>(0); // 0..N-1 editing, N resting
   const [text, setText] = useState("");
   const [hi, setHi] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -297,25 +310,25 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
   const listboxId = `${uid}-listbox`;
   const optionId = (idx: number) => `${uid}-opt-${idx}`;
 
-  const firstEmpty = useCallback((comp: Composite) => {
+  const firstEmpty = (comp: Composite) => {
     for (let i = 0; i < SEGMENT_ORDER.length; i++) {
       if (!comp[SEGMENT_ORDER[i]]) return i;
     }
-    return 3;
-  }, []);
+    return RESTING;
+  };
 
-  const navMax = Math.min(firstEmpty(committed), 2);
-  const activeKey = active < 3 ? SEGMENT_ORDER[active] : null;
+  const navMax = Math.min(firstEmpty(committed), RESTING - 1);
+  const activeKey = active < RESTING ? SEGMENT_ORDER[active] : null;
   const list = useMemo(
     () => (activeKey ? segmentList(activeKey, text) : []),
     [activeKey, text],
   );
-  const open = menuOpen && active < 3;
+  const open = menuOpen && active < RESTING;
 
   // Keep the active input focused while editing.
   useEffect(() => {
-    if (active < 3) inputRef.current?.focus();
-  }, [active]);
+    if (active < RESTING) inputRef.current?.focus();
+  }, [active, RESTING]);
 
   // Match the popover width to the field.
   useLayoutEffect(() => {
@@ -328,36 +341,33 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
     return () => ro.disconnect();
   }, []);
 
-  const commitAndAdvance = useCallback(
-    (item: BudgetOption) => {
-      if (active >= 3) return;
-      const next = { ...committed, [SEGMENT_ORDER[active]]: item };
-      setCommitted(next);
-      setText("");
-      setHi(0);
-      const allSet = SEGMENT_ORDER.every((k) => next[k]);
-      const na = allSet ? 3 : firstEmpty(next);
-      setActive(na);
-      if (na === 3) {
-        setMenuOpen(false);
-        setLive(
-          `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`,
-        );
-      } else {
-        setLive(`${SEGMENTS[SEGMENT_ORDER[active]].label} set to ${item.token}`);
-      }
-    },
-    [active, committed, firstEmpty],
-  );
+  const commitAndAdvance = (item: BudgetOption) => {
+    if (active >= RESTING) return;
+    const next = { ...committed, [SEGMENT_ORDER[active]]: item };
+    setCommitted(next);
+    setText("");
+    setHi(0);
+    const allSet = SEGMENT_ORDER.every((k) => next[k]);
+    const na = allSet ? RESTING : firstEmpty(next);
+    setActive(na);
+    if (na === RESTING) {
+      setMenuOpen(false);
+      setLive(
+        `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`,
+      );
+    } else {
+      setLive(`${SEGMENTS[SEGMENT_ORDER[active]].label} set to ${item.token}`);
+    }
+  };
 
-  const advanceKeep = useCallback(() => {
+  const advanceKeep = () => {
     const allSet = SEGMENT_ORDER.every((k) => committed[k]);
-    const na = allSet ? 3 : firstEmpty(committed);
+    const na = allSet ? RESTING : firstEmpty(committed);
     setText("");
     setHi(0);
     setActive(na);
-    if (na === 3) setMenuOpen(false);
-  }, [committed, firstEmpty]);
+    if (na === RESTING) setMenuOpen(false);
+  };
 
   const editSegment = useCallback((i: number) => {
     setActive(i);
@@ -366,10 +376,10 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
     setMenuOpen(true);
   }, []);
 
-  const clearSegment = useCallback((i: number) => {
+  const clearSegment = (i: number) => {
     setCommitted((prev) => ({ ...prev, [SEGMENT_ORDER[i]]: null }));
     setLive(`${SEGMENTS[SEGMENT_ORDER[i]].label} cleared`);
-  }, []);
+  };
 
   const clearAll = useCallback(() => {
     setCommitted(EMPTY_COMPOSITE);
@@ -382,7 +392,7 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
   }, []);
 
   const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (active >= 3) return;
+    if (active >= RESTING) return;
     const key = SEGMENT_ORDER[active];
     // Commit the highlighted row (or keep an existing value) and advance —
     // shared by Enter, Tab, and Arrow Right.
@@ -416,9 +426,31 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
         e.preventDefault();
         confirmSelection();
         break;
-      // Tab is intentionally NOT handled: it keeps its native behavior and moves
-      // focus out of the field (WCAG 2.4.3 focus order). Move between segments
-      // with ← / → instead; commit + advance with Enter or →.
+      case ".":
+        // Typing the delimiter commits + advances, like Enter / → (never typed
+        // into the field since segment tokens don't contain ".").
+        e.preventDefault();
+        confirmSelection();
+        break;
+      case "Tab": {
+        // Tab accepts the highlighted option and advances to the next segment
+        // (like Enter / → / "."). Once the code is complete, Tab falls through
+        // to its native behavior so focus can leave the field.
+        if (e.shiftKey) break;
+        const willCommit =
+          (text.trim() && list.length) ||
+          (!text.trim() && committed[key]) ||
+          (!text.trim() && list.length);
+        if (!willCommit) break;
+        const advanced = { ...committed };
+        if (text.trim() || !committed[key]) {
+          advanced[key] = list[hi] ?? list[0];
+        }
+        const completesCode = SEGMENT_ORDER.every((k) => advanced[k]);
+        if (!completesCode) e.preventDefault();
+        confirmSelection();
+        break;
+      }
       case "ArrowLeft":
         // Only navigate back when the caret is at the start of the text.
         if (e.currentTarget.selectionStart === 0 && text === "") {
@@ -478,7 +510,7 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
   const fieldParts: ReactNode[] = [];
   SEGMENT_ORDER.forEach((key, i) => {
     const committedItem = committed[key];
-    const isActive = i === active && active < 3;
+    const isActive = i === active && active < RESTING;
 
     const display = isActive ? text : (committedItem?.token ?? "");
     const ph = isActive
@@ -644,9 +676,9 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
             v1 · One field, type-ahead segments
           </Text>
           <Text variant="body" size="small" subdued>
-            Type to search each segment; press Enter or → to confirm and advance.
-            Click a code to re-edit it; ← / → move between segments; Tab leaves the
-            field.
+            Type to search each segment; press Enter, Tab, →, or "." to confirm
+            and advance. Click a code to re-edit it; ← / → move between segments;
+            Tab leaves the field once the code is complete.
           </Text>
         </Flex>
 
@@ -669,7 +701,7 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
                     aria-labelledby={labelId}
                     className={`bcv1-shell${size === "small" ? " bcv1-shell--small" : ""}`}
                     onClick={() => {
-                      if (active >= 3) return;
+                      if (active >= RESTING) return;
                       setMenuOpen(true);
                       inputRef.current?.focus();
                     }}
@@ -730,9 +762,10 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
               re-implements the listbox semantics and a11y Anvil already owns.
             </li>
             <li>
-              <strong>Custom keyboard model:</strong> type-ahead; Enter / → commit
-              + advance; ← / → move between segments; Backspace steps back; Tab
-              exits; Escape clears then dismisses. Hand-built, no Anvil equivalent.
+              <strong>Custom keyboard model:</strong> the first row is highlighted
+              on open; Enter / Tab / → / "." commit + advance (Tab exits once the
+              code is complete); ← / → move between segments; Backspace steps back;
+              Escape clears then dismisses. Hand-built, no Anvil equivalent.
             </li>
             <li>
               <strong>Hand-wired ARIA:</strong> to hit WCAG 2.2 AA without a
@@ -766,7 +799,19 @@ function PickerV1({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
 // v0 — three SelectFieldSync fields under one label
 // ===========================================================================
 
-function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number }) {
+function PickerV0({
+  size,
+  fieldWidth,
+  keys,
+}: {
+  size: FieldSize;
+  fieldWidth: number;
+  keys: SegmentKey[];
+}) {
+  // Only the first N segments render (driven by the Field count control);
+  // shadows the module SEGMENT_ORDER so the rest of the component is unchanged.
+  const SEGMENT_ORDER = keys;
+
   const [composite, setComposite] = useState<Composite>(EMPTY_COMPOSITE);
   const fieldsRef = useRef<HTMLDivElement>(null);
   const labelId = `${useId()}-label`;
@@ -776,6 +821,10 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
   const compositeRef = useRef(composite);
   compositeRef.current = composite;
   const lastTypedRef = useRef<Record<number, string>>({});
+  // Current segment keys, read inside the [] -deps listener effect below so a
+  // Field-count change doesn't leave it operating on stale keys.
+  const keysRef = useRef(SEGMENT_ORDER);
+  keysRef.current = SEGMENT_ORDER;
 
   const setSegment = (segment: SegmentKey, option: SelectFieldOption | null) =>
     setComposite((prev) => ({ ...prev, [segment]: option as BudgetOption | null }));
@@ -818,17 +867,87 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
     const onFocusOut = (e: Event) => {
       const i = indexOf(e.target);
       if (i < 0) return;
-      const key = SEGMENT_ORDER[i];
-      if (lastTypedRef.current[i] === "" && compositeRef.current[key]) {
+      const key = keysRef.current[i];
+      if (key && lastTypedRef.current[i] === "" && compositeRef.current[key]) {
         setComposite((prev) => ({ ...prev, [key]: null }));
       }
       delete lastTypedRef.current[i];
     };
+    // Opening an empty field highlights its first option (Anvil doesn't do this
+    // on open). A synthetic ArrowDown drives downshift's highlight so the top
+    // item ("01-200") is active and gets accepted on Tab / "." below.
+    const highlightFirst = (input: HTMLInputElement, i: number) => {
+      window.setTimeout(() => {
+        if (document.activeElement !== input) return;
+        if (input.getAttribute("aria-activedescendant")) return; // already highlighted
+        if ((lastTypedRef.current[i] ?? "") !== "") return; // user typed → let match win
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "ArrowDown",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }, 80);
+    };
+    const onFocusIn = (e: Event) => {
+      const i = indexOf(e.target);
+      if (i < 0) return;
+      const key = keysRef.current[i];
+      if (key && compositeRef.current[key]) return; // keep an existing value
+      highlightFirst(e.target as HTMLInputElement, i);
+    };
+
+    // Typing "." or pressing Tab commits the highlighted option and advances.
+    // "." also falls back to the top filtered option / focus move; Tab only
+    // accepts when the segment has no committed value yet (so tabbing through a
+    // set field doesn't overwrite it).
+    const onKeyDown = (e: Event) => {
+      const ke = e as unknown as globalThis.KeyboardEvent;
+      const i = indexOf(e.target);
+      if (i < 0) return;
+      const key = keysRef.current[i];
+      const input = e.target as HTMLInputElement;
+      const activeId = input.getAttribute("aria-activedescendant");
+      const activeOption = activeId ? document.getElementById(activeId) : null;
+
+      if (ke.key === ".") {
+        ke.preventDefault();
+        let option: HTMLElement | null = activeOption;
+        if (!option && (lastTypedRef.current[i] ?? "").trim()) {
+          option = document.querySelector<HTMLElement>(
+            '[class*="options-popover"] [role="option"]',
+          );
+        }
+        if (option) {
+          option.click(); // selects → selectAndAdvance moves focus
+          return;
+        }
+        const inputs = Array.from(
+          root.querySelectorAll<HTMLInputElement>(".bcv0-field input"),
+        );
+        const next = inputs[i + 1];
+        next?.focus();
+        next?.click();
+        return;
+      }
+
+      if (ke.key === "Tab" && !ke.shiftKey && activeOption && !compositeRef.current[key]) {
+        // Accept the highlighted option (Tab's own focus move is superseded by
+        // selectAndAdvance focusing the next field).
+        ke.preventDefault();
+        activeOption.click();
+      }
+    };
     root.addEventListener("input", onInput, true);
     root.addEventListener("focusout", onFocusOut, true);
+    root.addEventListener("focusin", onFocusIn, true);
+    root.addEventListener("keydown", onKeyDown, true);
     return () => {
       root.removeEventListener("input", onInput, true);
       root.removeEventListener("focusout", onFocusOut, true);
+      root.removeEventListener("focusin", onFocusIn, true);
+      root.removeEventListener("keydown", onKeyDown, true);
     };
   }, []);
 
@@ -842,11 +961,12 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
       <Flex direction="column" gap="4">
         <Flex direction="column" gap="1">
           <Text variant="eyebrow" size="small">
-            v0 · Three SelectFields, one label
+            v0 · SelectFields, one label
           </Text>
           <Text variant="body" size="small" subdued>
-            One "Budget Code" label; three Anvil <code>SelectField</code>s separated
-            by periods, each showing only the code and pinning this project's items.
+            One "Budget Code" label; N Anvil <code>SelectField</code>s (set by the
+            Field count control) separated by periods, each showing only the code
+            and pinning this project's items.
           </Text>
         </Flex>
 
@@ -863,7 +983,12 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
             className="bcv0-fields"
             role="group"
             aria-labelledby={labelId}
-            style={{ width: fieldWidth, maxWidth: "100%" }}
+            style={{
+              width: fieldWidth,
+              maxWidth: "100%",
+              // 1fr per field, `auto` for each "." separator between them.
+              gridTemplateColumns: SEGMENT_ORDER.map(() => "1fr").join(" auto "),
+            }}
           >
             {SEGMENT_ORDER.map((key, i) => {
               const projectItems = v0ProjectItemsFor(key);
@@ -875,7 +1000,22 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
                       .
                     </span>
                   )}
-                  <div className="bcv0-field">
+                  <div
+                    className={`bcv0-field${composite[key] ? " bcv0-field--filled" : ""}`}
+                  >
+                    {/* Custom placeholder overlay: a native <input> can't
+                        ellipsize its placeholder when focused (only when
+                        blurred), so the text would flip between "Cost Co…" and
+                        "Cost Code". This span ellipsizes the same in both states.
+                        Shown only while the input shows its (transparent) native
+                        placeholder, via :has(input:placeholder-shown). */}
+                    <span
+                      className="bcv0-ph"
+                      aria-hidden="true"
+                      style={{ fontSize: size === "small" ? 14 : 16 }}
+                    >
+                      {SEGMENTS[key].label}
+                    </span>
                     <SelectFieldSync
                       label={SEGMENTS[key].label}
                       hideLabel
@@ -930,10 +1070,11 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
           }
         >
             <li>
-              <strong>Composition:</strong> three stock <code>SelectFieldSync</code>{" "}
-              fields (native menu, selected states, add-new, search, <code>size</code>),
-              one shared <code>FieldLabel</code> + <code>hideLabel</code>, in a CSS
-              grid so fields stay equal width when the clear × appears.
+              <strong>Composition:</strong> N stock <code>SelectFieldSync</code>{" "}
+              fields (2–3, via the Field count control; native menu, selected
+              states, add-new, search, <code>size</code>), one shared{" "}
+              <code>FieldLabel</code> + <code>hideLabel</code>, in a CSS grid so
+              fields stay equal width when the clear × appears.
             </li>
             <li>
               <strong>Supported API:</strong> <code>label</code> = code,{" "}
@@ -963,10 +1104,12 @@ function PickerV0({ size, fieldWidth }: { size: FieldSize; fieldWidth: number })
               signal the inline layout / selected-state should be supported.
             </li>
             <li>
-              <strong>Custom behavior:</strong> auto-advance to the next field on
-              selection; clear the segment when its text is emptied and blurred
-              (stock <code>SelectFieldSync</code> otherwise restores the old value
-              on blur).
+              <strong>Custom behavior:</strong> opening an empty field highlights
+              its first option (Anvil doesn't), and Tab accepts the highlight;
+              auto-advance to the next field on selection; typing "." commits the
+              top match and advances; clear the segment when its text is emptied
+              and blurred (stock <code>SelectFieldSync</code> otherwise restores
+              the old value on blur).
             </li>
             <li>
               <strong>Style:</strong> "." separators use the heavier display face
@@ -992,6 +1135,9 @@ export default function BudgetCodePicker() {
   // Constrains just the picker field container (not the whole card), so you can
   // preview how each picker reflows as its available width shrinks.
   const [fieldWidth, setFieldWidth] = useState(FIELD_WIDTH_DEFAULT);
+  // How many segments the picker exposes (production budget codes are N-segment).
+  const [fieldCount, setFieldCount] = useState(2);
+  const keys = SEGMENT_ORDER.slice(0, fieldCount);
 
   return (
     <Flex
@@ -1009,6 +1155,19 @@ export default function BudgetCodePicker() {
             Budget Code Picker
           </Text>
           <div className="bc-controls">
+            {/* Field count: how many segments the picker renders (2 or 3). */}
+            <div className="bc-control">
+              <span className="bc-control-label">Field count</span>
+              <SegmentedControl
+                size="small"
+                selected={String(fieldCount)}
+                onChange={(value) => setFieldCount(Number(value))}
+              >
+                <SegmentedControl.Segment value="2">2</SegmentedControl.Segment>
+                <SegmentedControl.Segment value="3">3</SegmentedControl.Segment>
+              </SegmentedControl>
+            </div>
+
             {/* Field-width slider: shrinks the picker container in both cards. */}
             <label className="bc-control">
               <span className="bc-control-label">Field width</span>
@@ -1059,10 +1218,10 @@ export default function BudgetCodePicker() {
             field container inside each, not the whole card. */}
         <Flex gap="4" alignItems="flex-start" wrap="wrap">
           <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV1 size={size} fieldWidth={fieldWidth} />
+            <PickerV1 size={size} fieldWidth={fieldWidth} keys={keys} />
           </div>
           <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV0 size={size} fieldWidth={fieldWidth} />
+            <PickerV0 size={size} fieldWidth={fieldWidth} keys={keys} />
           </div>
         </Flex>
       </Flex>
