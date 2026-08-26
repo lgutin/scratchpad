@@ -948,8 +948,557 @@ function PickerV1({
 }
 
 // ===========================================================================
+// v2 — same fused look as v1, but each segment is a GENUINE separate input
+//      (type="time" model): every segment is its own natively-focusable
+//      combobox, native Tab moves focus, one shared wide menu tracks focus.
+// ===========================================================================
+
+function PickerV2({
+  size,
+  fieldWidth,
+  keys,
+}: {
+  size: FieldSize;
+  fieldWidth: number;
+  keys: SegmentKey[];
+}) {
+  // Only the first N segments render (driven by the Field count control).
+  const SEGMENT_ORDER = keys;
+
+  const [committed, setCommitted] = useState<Composite>(EMPTY_COMPOSITE);
+  // Which segment currently has focus (0..N-1), or -1 when the field is at rest.
+  // Derived from real DOM focus events — not a hijacked counter.
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const [text, setText] = useState("");
+  const [hi, setHi] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [shellWidth, setShellWidth] = useState<number>(460);
+  const [live, setLive] = useState("");
+  // True right after focusing a committed segment: its token is prefilled +
+  // selected, but the menu still shows the full list (not filtered to it).
+  const [prefilled, setPrefilled] = useState(false);
+
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // One ref per segment input — the heart of the separate-input model.
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const blurTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(blurTimer.current), []);
+
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  const listboxId = `${uid}-listbox`;
+  const optionId = (idx: number) => `${uid}-opt-${idx}`;
+
+  const activeKey = activeIndex >= 0 ? SEGMENT_ORDER[activeIndex] : null;
+  const list = useMemo(
+    () => (activeKey ? segmentList(activeKey, prefilled ? "" : text) : []),
+    [activeKey, text, prefilled],
+  );
+  const open = menuOpen && activeIndex >= 0;
+
+  // Match the popover width to the field.
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => setShellWidth(el.getBoundingClientRect().width);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // After focusing a committed segment, select its prefilled token so typing
+  // replaces it (the "select all" highlight, in place of a chip). Runs after
+  // the controlled value is applied so the selection isn't collapsed.
+  useEffect(() => {
+    if (activeIndex >= 0 && prefilled) inputRefs.current[activeIndex]?.select();
+  }, [activeIndex, prefilled]);
+
+  // Move real DOM focus to segment `i`; its onFocus wires up the shared menu.
+  // Past the last segment → blur to rest.
+  const focusSegment = (i: number) => {
+    if (i < 0) return;
+    if (i >= SEGMENT_ORDER.length) {
+      inputRefs.current[activeIndex]?.blur();
+      return;
+    }
+    inputRefs.current[i]?.focus();
+  };
+
+  // Genuine focus handler: real focus (Tab, click, or programmatic) drives state.
+  const onSegFocus = (i: number) => {
+    const key = SEGMENT_ORDER[i];
+    const item = committed[key];
+    setActiveIndex(i);
+    setText(item?.token ?? "");
+    setPrefilled(!!item);
+    const full = segmentList(key, "");
+    const idx = item ? full.findIndex((o) => o.id === item.id) : 0;
+    setHi(idx >= 0 ? idx : 0);
+    setMenuOpen(true);
+  };
+
+  // Close the menu + go to rest only when focus leaves ALL segment inputs
+  // (including when it lands on the clear button inside the shell).
+  const onSegBlur = () => {
+    clearTimeout(blurTimer.current);
+    blurTimer.current = setTimeout(() => {
+      const ae = document.activeElement;
+      const stillInSegment = inputRefs.current.some((el) => el && el === ae);
+      if (!stillInSegment) {
+        setMenuOpen(false);
+        setActiveIndex(-1);
+        setText("");
+        setPrefilled(false);
+      }
+    }, 120);
+  };
+
+  const commitAndAdvance = (item: BudgetOption, i: number) => {
+    const key = SEGMENT_ORDER[i];
+    const next = { ...committed, [key]: item };
+    setCommitted(next);
+    const na = i + 1;
+    if (na >= SEGMENT_ORDER.length) {
+      const allSet = SEGMENT_ORDER.every((k) => next[k]);
+      setLive(
+        allSet
+          ? `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`
+          : `${SEGMENTS[key].label} set to ${item.token}`,
+      );
+      inputRefs.current[i]?.blur(); // done → rest
+    } else {
+      setLive(`${SEGMENTS[key].label} set to ${item.token}`);
+      focusSegment(na); // real focus move to the next segment
+    }
+  };
+
+  const advanceKeep = (i: number) => focusSegment(i + 1);
+
+  const clearSegment = (i: number) => {
+    setCommitted((prev) => ({ ...prev, [SEGMENT_ORDER[i]]: null }));
+    setText("");
+    setPrefilled(false);
+    setHi(0);
+    setLive(`${SEGMENTS[SEGMENT_ORDER[i]].label} cleared`);
+  };
+
+  const clearAll = () => {
+    setCommitted(EMPTY_COMPOSITE);
+    setLive("Budget code cleared");
+    requestAnimationFrame(() => inputRefs.current[0]?.focus());
+  };
+
+  const onSegKeyDown = (e: KeyboardEvent<HTMLInputElement>, i: number) => {
+    const key = SEGMENT_ORDER[i];
+    // Commit the highlighted row (or keep an existing value) and advance focus.
+    const confirmSelection = () => {
+      if (!text.trim() && committed[key]) advanceKeep(i);
+      else if (list.length) commitAndAdvance(list[hi] ?? list[0], i);
+    };
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        if (!menuOpen) {
+          setMenuOpen(true);
+          break;
+        }
+        setHi((h) => Math.min(h + 1, Math.max(list.length - 1, 0)));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        if (!menuOpen) {
+          setMenuOpen(true);
+          break;
+        }
+        setHi((h) => Math.max(h - 1, 0));
+        break;
+      case "Enter":
+        e.preventDefault();
+        confirmSelection();
+        break;
+      case ".":
+        // Typing the delimiter commits + advances, like Enter / →.
+        e.preventDefault();
+        confirmSelection();
+        break;
+      case "Tab": {
+        // Native Tab moves focus between segments — we DON'T preventDefault.
+        // As an enhancement, accept the highlighted row before the browser
+        // moves focus, so Tab both commits and advances naturally.
+        if (e.shiftKey) break;
+        if (list.length && (text.trim() || !committed[key])) {
+          const key2 = SEGMENT_ORDER[i];
+          setCommitted((prev) => ({ ...prev, [key2]: list[hi] ?? list[0] }));
+          setLive(`${SEGMENTS[key2].label} set to ${(list[hi] ?? list[0]).token}`);
+        }
+        break;
+      }
+      case "ArrowLeft":
+        // At the very start of the text, move focus to the previous segment.
+        if (
+          e.currentTarget.selectionStart === 0 &&
+          e.currentTarget.selectionEnd === 0
+        ) {
+          e.preventDefault();
+          focusSegment(i - 1);
+        }
+        break;
+      case "ArrowRight": {
+        // At the end of the text, → commits the highlighted row and advances.
+        const el = e.currentTarget;
+        const atEnd = el.selectionStart === el.value.length;
+        if (!atEnd) break;
+        e.preventDefault();
+        confirmSelection();
+        break;
+      }
+      case "Backspace":
+        if (text === "") {
+          e.preventDefault();
+          if (committed[key]) clearSegment(i);
+          else focusSegment(i - 1);
+        }
+        break;
+      case "Escape":
+        // APG combobox: first Escape clears the query, then dismisses the popup.
+        e.preventDefault();
+        if (text) setText("");
+        else setMenuOpen(false);
+        break;
+    }
+  };
+
+  const anyCommitted = SEGMENT_ORDER.some((k) => committed[k]);
+  const allCommitted = SEGMENT_ORDER.every((k) => committed[k]);
+
+  // Each segment is an independent, natively-focusable <input role="combobox">.
+  // The value shows the focused segment's live query or its committed token;
+  // `field-sizing: content` keeps widths stable so switching never jumps.
+  const fieldParts: ReactNode[] = [];
+  SEGMENT_ORDER.forEach((key, i) => {
+    const committedItem = committed[key];
+    const isActive = i === activeIndex;
+    const display = isActive ? text : (committedItem?.token ?? "");
+    // Placeholder: committed token (so a set-then-cleared field never looks
+    // empty) else the segment name.
+    const ph = committedItem && isActive ? committedItem.token : committedItem && !isActive ? "" : SEGMENTS[key].label;
+    const isToken = !isActive && !!committedItem;
+
+    fieldParts.push(
+      <input
+        key={`seg-${key}`}
+        ref={(el) => {
+          inputRefs.current[i] = el;
+        }}
+        tabIndex={0}
+        className={`bcv1-input${isToken ? " bcv1-input--token" : ""}`}
+        value={display}
+        placeholder={ph}
+        aria-label={SEGMENTS[key].label}
+        // Every segment is its own APG combobox; only the focused one's popup
+        // is expanded and controls the shared listbox.
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={isActive ? open : false}
+        aria-controls={isActive && open ? listboxId : undefined}
+        aria-activedescendant={
+          isActive && open && list.length ? optionId(hi) : undefined
+        }
+        size={1}
+        onChange={(e) => {
+          setText(e.target.value);
+          setPrefilled(false); // real typing → filter by the query
+          setHi(0);
+          setMenuOpen(true);
+        }}
+        onFocus={() => onSegFocus(i)}
+        onBlur={onSegBlur}
+        onKeyDown={(e) => onSegKeyDown(e, i)}
+      />,
+    );
+
+    if (i < SEGMENT_ORDER.length - 1) {
+      fieldParts.push(
+        <span key={`sep-${key}`} className="bcv1-sep" aria-hidden="true">
+          .
+        </span>,
+      );
+    }
+  });
+
+  const assembled = allCommitted
+    ? SEGMENT_ORDER.map((k) => committed[k]!.token).join(V1_SEP)
+    : "";
+
+  const menu = activeKey
+    ? (() => {
+        const label = SEGMENTS[activeKey].label;
+        const plural = `${label}s`;
+        const projectRows = list.filter((o) => o.extra.onProject);
+        const restRows = list.filter((o) => !o.extra.onProject);
+        const currentId = committed[activeKey]?.id;
+
+        const renderRow = (item: BudgetOption, idx: number) => {
+          const isCurrent = currentId === item.id;
+          return (
+            <div
+              key={item.id}
+              id={optionId(idx)}
+              role="option"
+              aria-selected={isCurrent}
+              className={`bcv1-row${idx === hi ? " bcv1-row--hi" : ""}${
+                isCurrent ? " bcv1-row--current" : ""
+              }`}
+              onMouseEnter={() => setHi(idx)}
+              // Keep focus in the input so blur-close doesn't fire before click.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => commitAndAdvance(item, activeIndex)}
+            >
+              <span className="bcv1-row-code">{primaryOf(item)}</span>
+              <span className="bcv1-row-desc">{secondaryOf(item)}</span>
+              <span className="bcv1-check" aria-hidden={!isCurrent}>
+                {isCurrent && (
+                  <Icon
+                    svg={CheckIcon}
+                    size="small"
+                    color="var(--a2-foreground-color-primary, #0265dc)"
+                  />
+                )}
+              </span>
+            </div>
+          );
+        };
+
+        const projHeaderId = `${uid}-grp-project`;
+        const restHeaderId = `${uid}-grp-rest`;
+        const restHeaderText =
+          projectRows.length > 0 ? `More ${plural}` : plural;
+
+        return (
+          <div className="bcv1-menu" style={{ width: shellWidth }}>
+            <div
+              className="bcv1-list"
+              role="listbox"
+              id={listboxId}
+              aria-label={label}
+            >
+              {projectRows.length > 0 && (
+                <div role="group" aria-labelledby={projHeaderId}>
+                  <div id={projHeaderId} className="bcv1-menu-header">
+                    {plural} · This project
+                  </div>
+                  {projectRows.map((item, i) => renderRow(item, i))}
+                </div>
+              )}
+              {projectRows.length > 0 && restRows.length > 0 && (
+                <div className="bcv1-menu-hr" role="separator" aria-hidden="true" />
+              )}
+              {restRows.length > 0 && (
+                <div role="group" aria-labelledby={restHeaderId}>
+                  <div id={restHeaderId} className="bcv1-menu-header">
+                    {restHeaderText}
+                  </div>
+                  {restRows.map((item, i) =>
+                    renderRow(item, projectRows.length + i),
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="bcv1-footer">
+              <Button
+                appearance="secondary"
+                size="small"
+                icon={{ before: AddIcon }}
+                style={{ width: "100%" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  /* stub: wire to real create-new-code flow */
+                }}
+              >
+                Add {label.toLowerCase()}
+              </Button>
+            </div>
+          </div>
+        );
+      })()
+    : null;
+
+  return (
+    <Card padding="large" style={{ width: "100%", height: "100%" }}>
+      <Flex direction="column" gap="4">
+        <Flex direction="column" gap="1">
+          <Text variant="eyebrow" size="small">
+            v2 · One field, separate inputs
+          </Text>
+          <Text variant="body" size="small" subdued>
+            Same fused field as v1, but each segment is its own real combobox.
+            Tab / Shift+Tab move between segments natively; type to search;
+            Enter, →, or "." confirm and advance. Each segment has its own label
+            for screen readers.
+          </Text>
+        </Flex>
+
+        <Flex direction="column" gap="1">
+          <FieldLabel id={labelId}>Budget Code</FieldLabel>
+          <div ref={wrapRef} style={{ width: fieldWidth, maxWidth: "100%" }}>
+            <Popover
+              open={open}
+              modal={false}
+              disableCaret
+              noPadding
+              placement="bottom-start"
+              onClickOutside={() => setMenuOpen(false)}
+            >
+              <Popover.Trigger>
+                {(triggerProps: Record<string, unknown>) => (
+                  <div
+                    {...stripAria(triggerProps)}
+                    role="group"
+                    aria-labelledby={labelId}
+                    className={`bcv1-shell${size === "small" ? " bcv1-shell--small" : ""}`}
+                    onClick={(e) => {
+                      // Clicking the blank shell area focuses the first empty
+                      // segment (or the last, if the code is complete). Clicks
+                      // on the inputs themselves focus natively.
+                      if (e.target !== e.currentTarget) return;
+                      const firstEmpty = SEGMENT_ORDER.findIndex(
+                        (k) => !committed[k],
+                      );
+                      const target =
+                        firstEmpty === -1
+                          ? SEGMENT_ORDER.length - 1
+                          : firstEmpty;
+                      inputRefs.current[target]?.focus();
+                    }}
+                  >
+                    {fieldParts}
+                    {anyCommitted && (
+                      <span className="bcv1-clear">
+                        <Button
+                          appearance="ghost"
+                          size="small"
+                          icon={CloseIcon}
+                          aria-label="Clear budget code"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearAll();
+                          }}
+                        />
+                      </span>
+                    )}
+                  </div>
+                )}
+              </Popover.Trigger>
+              <Popover.Content>{menu}</Popover.Content>
+            </Popover>
+          </div>
+        </Flex>
+
+        {/* Polite status: announces each commit + the completed code to AT. */}
+        <div className="bcv1-sr-only" role="status" aria-live="polite">
+          {live}
+        </div>
+
+        <AssembledReadout value={assembled} />
+
+        <EvalSection title="Pros">
+          <li>
+            <strong>Genuine separate inputs.</strong> Each segment is its own
+            natively-focusable <code>&lt;input role="combobox"&gt;</code> with a
+            distinct label — real Tab order, no hijacked focus. This is the
+            design-team's recommended "three components on the page" route.
+          </li>
+          <li>
+            <strong>Still one identifier.</strong> Reads and behaves as a single
+            fused field with one clear × and one shared wide menu — same look as
+            v1, matching the native <code>type="time"</code> pattern.
+          </li>
+          <li>
+            <strong>Native focus &amp; keyboard.</strong> Tab / Shift+Tab move
+            between segments for free; typing filters the focused segment;
+            Enter / → / "." commit and move focus to the next.
+          </li>
+          <li>
+            <strong>Lower a11y risk than v1.</strong> Screen readers announce
+            each segment as its own labeled combobox — no single-focus +{" "}
+            <code>aria-activedescendant</code> juggling spanning the whole field.
+          </li>
+        </EvalSection>
+
+        <EvalSection title="Cons">
+          <li>
+            <strong>Still a custom container.</strong> The fused border, "."
+            separators, and shared menu are hand-built CSS around real inputs —
+            not a stock Anvil field.
+          </li>
+          <li>
+            <strong>Shared menu is bespoke.</strong> The listbox rows, grouping,
+            and selected states are still hand-rendered rather than{" "}
+            <code>SelectField</code>'s own menu.
+          </li>
+          <li>
+            <strong>Focus choreography.</strong> Programmatic focus moves on
+            commit and select-all-on-re-edit need care to stay glitch-free
+            across browsers.
+          </li>
+          <li>
+            <strong>Newer-CSS reliance.</strong> Leans on{" "}
+            <code>field-sizing: content</code> for stable widths, same as v1.
+          </li>
+        </EvalSection>
+
+        <Customizations
+          lead={
+            <>
+              The safer take on the combined field: keep v1's visuals, but build
+              on genuinely separate inputs so focus, Tab order, and per-segment
+              labeling come from the platform rather than a custom state machine.
+            </>
+          }
+        >
+          <li>
+            <strong>Separate-input model.</strong> N real{" "}
+            <code>&lt;input&gt;</code>s, each <code>tabIndex=0</code> and its own{" "}
+            <code>role="combobox"</code>; focus is tracked from actual DOM focus
+            events, not an <code>active</code> index that hijacks Tab.
+          </li>
+          <li>
+            <strong>Native focus movement.</strong> Tab / Shift+Tab traverse
+            segments with the browser's own focus order; commit actions move
+            focus programmatically via a per-input <code>ref</code>.
+          </li>
+          <li>
+            <strong>One shared menu, bound to focus.</strong> A single{" "}
+            <code>Popover</code> renders the focused segment's list;{" "}
+            <code>aria-controls</code> / <code>aria-activedescendant</code> point
+            from the focused input to the shared listbox.
+          </li>
+          <li>
+            <strong>Re-edit &amp; clear.</strong> Focusing a committed segment
+            prefills + selects its token (typing replaces it); a single × clears
+            the whole code; Backspace on an empty segment clears or steps back.
+          </li>
+          <li>
+            <strong>Reused unchanged:</strong> <code>Popover</code>,{" "}
+            <code>Icon</code>, <code>Button</code>, <code>FieldLabel</code>, the
+            shared <code>bcv1-*</code> styles, and <code>--a2-</code> tokens.
+          </li>
+        </Customizations>
+      </Flex>
+    </Card>
+  );
+}
+
+// ===========================================================================
 // v0 — three SelectFieldSync fields under one label
 // ===========================================================================
+
+// Minimum readable width per v0 segment. The field's min-width scales with the
+// field count (2 → 240px, 3 → 360px, …) so segments never truncate.
+const V0_MIN_PX_PER_FIELD = 120;
 
 function PickerV0({
   size,
@@ -1146,6 +1695,9 @@ function PickerV0({
             aria-labelledby={labelId}
             style={{
               width: fieldWidth,
+              // Floor the width so segments stay readable and never truncate
+              // (per Nick's feedback): 120px per field → 240px for 2, 360px for 3.
+              minWidth: V0_MIN_PX_PER_FIELD * SEGMENT_ORDER.length,
               maxWidth: "100%",
               // 1fr per field, `auto` for each "." separator between them.
               gridTemplateColumns: SEGMENT_ORDER.map(() => "1fr").join(" auto "),
@@ -1431,13 +1983,19 @@ export default function BudgetCodePicker() {
           </div>
         </Flex>
 
-        {/* v1 on the left, v0 on the right; the slider above constrains just the
-            field container inside each, not the whole card. */}
+        {/* Row 1: v2 (re-architected) next to v1 (original bespoke). Row 2: v0
+            on its own row at a matching half-width. The slider above constrains
+            just the field container inside each card, not the whole card. */}
         <Flex gap="4" alignItems="flex-start" wrap="wrap">
+          <div style={{ flex: 1, minWidth: 420 }}>
+            <PickerV2 size={size} fieldWidth={fieldWidth} keys={keys} />
+          </div>
           <div style={{ flex: 1, minWidth: 420 }}>
             <PickerV1 size={size} fieldWidth={fieldWidth} keys={keys} />
           </div>
-          <div style={{ flex: 1, minWidth: 420 }}>
+        </Flex>
+        <Flex gap="4">
+          <div style={{ width: "calc(50% - 8px)", minWidth: 420 }}>
             <PickerV0 size={size} fieldWidth={fieldWidth} keys={keys} />
           </div>
         </Flex>
