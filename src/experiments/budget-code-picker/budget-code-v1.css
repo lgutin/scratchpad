@@ -90,6 +90,43 @@
   text-overflow: ellipsis;
 }
 
+/* Placeholder overlay. Native <input> placeholders don't render a text-overflow
+   ellipsis while focused (they clip), so a focused empty segment would show
+   "Cost Co" while an unfocused one shows "Cost …". We hide the native
+   placeholder and render it as this span instead, which ellipsizes identically
+   regardless of focus. The input keeps its (transparent) placeholder so
+   field-sizing still sizes the segment to the label width. */
+.bcv1-input::placeholder {
+  color: transparent;
+}
+
+.bcv1-seg {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bcv1-ph {
+  position: absolute;
+  inset: 0;
+  padding: 6px 4px;
+  box-sizing: border-box;
+  font-size: 16px;
+  line-height: 22.4px; /* match .bcv1-input (16px × 1.4) for vertical alignment */
+  color: var(--a2-foreground-color-placeholder, #757575);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.bcv1-shell--small .bcv1-ph {
+  font-size: 14px;
+  padding: 4px 4px;
+  line-height: 19.6px; /* 14px × 1.4 */
+}
+
 /* Read-only committed segment: looks like a token, click to re-edit. */
 .bcv1-input--token {
   cursor: pointer;
@@ -122,6 +159,32 @@
   padding: 0 2px;
   color: var(--a2-foreground-color-subdued, #606162);
   user-select: none;
+}
+
+/* "Selected direction" badge on the v2 card: a plain green check, sized to the
+   eyebrow height (no circular background). */
+.bcv2-pick {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--a2-foreground-color-success, #1a8245);
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* Match the small eyebrow's glyph height (~13px) rather than the icon default. */
+.bcv2-pick svg {
+  width: 13px !important;
+  height: 13px !important;
+}
+
+.bcv2-pick:focus-visible {
+  outline: 2px solid var(--a2-foreground-color-primary, #0265dc);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .bcv1-clear {
@@ -183,19 +246,41 @@
 
 /* Hover / keyboard highlight = neutral gray band (Anvil OptionRow
    --highlighted = background-color-strong-hover), not a blue inset. */
-.bcv1-row--hi,
-.bcv1-row:hover {
-  background: var(--a2-background-color-strong-hover, #ececed);
+/* Option-state model mirrors Anvil's SelectField (light theme):
+   1. active/hover, unselected      → gray  (#eeeeee)
+   2. selected, not active          → light blue (#e6f1ff) + primary text
+   3. selected AND active/hover     → stronger blue (#cce3ff) + darker text
+   The selected row deliberately has two shades depending on whether it's also
+   the highlighted/active row (e.g. it's both on open). */
+
+/* 1. Active/highlighted but NOT the selected row: gray. */
+.bcv1-row--hi:not(.bcv1-row--current),
+.bcv1-row:hover:not(.bcv1-row--current) {
+  background: var(--a2-background-color-strong-hover, #eeeeee);
 }
 
-/* Row holding the segment's current committed value — blue fill + blue text. */
+/* 2. Selected value, not currently the active row: light blue + primary text. */
 .bcv1-row--current {
-  background: var(--a2-background-color-primary-subdued, #e0f2ff);
+  background: var(--a2-background-color-primary-subdued, #e6f1ff);
 }
 
 .bcv1-row--current .bcv1-row-code,
 .bcv1-row--current .bcv1-row-desc {
   color: var(--a2-foreground-color-primary, #0265dc);
+}
+
+/* 3. Selected AND active/hovered (e.g. immediately on open): stronger blue
+   fill + darker blue text — the emphasized selected state. */
+.bcv1-row--current.bcv1-row--hi,
+.bcv1-row--current:hover {
+  background: var(--a2-background-color-primary-subdued-hover, #cce3ff);
+}
+
+.bcv1-row--current.bcv1-row--hi .bcv1-row-code,
+.bcv1-row--current.bcv1-row--hi .bcv1-row-desc,
+.bcv1-row--current:hover .bcv1-row-code,
+.bcv1-row--current:hover .bcv1-row-desc {
+  color: var(--a2-color-blue-700, #1d4ca3);
 }
 
 .bcv1-row-code {

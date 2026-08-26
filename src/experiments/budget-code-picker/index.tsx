@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   Button,
@@ -299,6 +300,76 @@ function Customizations({
 
 const V1_SEP = " . ";
 
+// Space reserved (px) for the clear "×" button so it never squeezes the last
+// segment's placeholder. Kept constant so the field's min-width is fill-stable.
+const CLEAR_RESERVE_PX = 32;
+
+// Shared <canvas> for text measurement (created lazily, reused across calls).
+let measureCanvas: HTMLCanvasElement | null = null;
+function measureTextWidth(text: string, font: string): number {
+  if (!measureCanvas) measureCanvas = document.createElement("canvas");
+  const ctx = measureCanvas.getContext("2d");
+  if (!ctx) return 0;
+  ctx.font = font;
+  return ctx.measureText(text).width;
+}
+
+// Compute the width at which every segment's placeholder shows in full (no
+// clipping), for use as the fused field's minimum width. Derived from the real
+// labels + the input's computed font (not magic numbers), so it scales with the
+// field count and adapts if labels or size change. It's a *constant* floor
+// (independent of what's typed/committed), so segments still hug their tokens
+// and the field never jumps as it fills or clears.
+function usePlaceholderMinWidth(
+  wrapRef: RefObject<HTMLDivElement | null>,
+  labels: string[],
+  size: FieldSize,
+): number | undefined {
+  const [minWidth, setMinWidth] = useState<number>();
+  const labelsKey = labels.join("\u0000");
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const input = wrap?.querySelector<HTMLInputElement>(".bcv1-input");
+    const shell = wrap?.querySelector<HTMLElement>(".bcv1-shell");
+    if (!wrap || !input || !shell) return;
+
+    const measure = () => {
+      const cs = getComputedStyle(input);
+      const font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const padX =
+        parseFloat(cs.paddingLeft || "0") + parseFloat(cs.paddingRight || "0");
+      // Each segment: its placeholder text + the input's own padding (+1px slack
+      // so the ellipsis never triggers at the exact pixel boundary).
+      const segments = labels.reduce(
+        (sum, label) =>
+          sum + Math.ceil(measureTextWidth(label, font)) + padX + 1,
+        0,
+      );
+      // Separators (" . ") between segments, measured from a live one.
+      const sepEl = wrap.querySelector<HTMLElement>(".bcv1-sep");
+      const sepW = sepEl ? sepEl.getBoundingClientRect().width : 10;
+      const seps = sepW * Math.max(labels.length - 1, 0);
+      const shellCs = getComputedStyle(shell);
+      const shellPadX =
+        parseFloat(shellCs.paddingLeft || "0") +
+        parseFloat(shellCs.paddingRight || "0");
+      const borders =
+        parseFloat(shellCs.borderLeftWidth || "0") +
+        parseFloat(shellCs.borderRightWidth || "0");
+      setMinWidth(
+        Math.ceil(segments + seps + CLEAR_RESERVE_PX + shellPadX + borders),
+      );
+    };
+
+    measure();
+    // Re-measure once web fonts finish loading — text metrics shift when the
+    // real Nunito Sans replaces the fallback.
+    document.fonts?.ready.then(measure).catch(() => {});
+  }, [wrapRef, labelsKey, size]);
+
+  return minWidth;
+}
+
 // Popover.Trigger spreads combobox-ish aria state (aria-expanded / -haspopup)
 // onto the wrapper div, but in this custom control those belong on the active
 // <input role="combobox">. Drop them so the role-less shell stays clean.
@@ -397,6 +468,13 @@ function PickerV1({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Floor the field width at the point where every placeholder shows in full.
+  const measuredMinWidth = usePlaceholderMinWidth(
+    wrapRef,
+    SEGMENT_ORDER.map((k) => SEGMENTS[k].label),
+    size,
+  );
 
   const editSegment = (i: number) => {
     const key = SEGMENT_ORDER[i];
@@ -569,13 +647,6 @@ function PickerV1({
   const anyCommitted = SEGMENT_ORDER.some((k) => committed[k]);
   const allCommitted = SEGMENT_ORDER.every((k) => committed[k]);
 
-  // Re-editing a set segment keeps its current token as the placeholder so the
-  // field never visually empties; otherwise the segment's name.
-  const placeholderFor = (i: number) => {
-    const key = SEGMENT_ORDER[i];
-    return committed[key] ? committed[key]!.token : SEGMENTS[key].label;
-  };
-
   // Build the inline field content. All three segments always render (so the
   // remaining placeholders stay visible when partially filled), each an <input>
   // that sizes to its own content (CSS `field-sizing: content`) — the blue
@@ -587,19 +658,21 @@ function PickerV1({
     const isActive = i === active && active < RESTING;
 
     const display = isActive ? text : (committedItem?.token ?? "");
-    const ph = isActive
-      ? placeholderFor(i)
-      : committedItem
-        ? ""
-        : SEGMENTS[key].label;
+    // The active segment always shows its real label (so clearing its text
+    // reveals e.g. "Cost Type"); a committed, non-active segment shows its
+    // token as the value (no placeholder).
+    const ph = committedItem && !isActive ? "" : SEGMENTS[key].label;
     // Only committed (filled) segments are re-editable — hoverable + clickable.
     // Empty, non-active segments are just placeholders: not hoverable/clickable.
     const isToken = !isActive && !!committedItem;
     const isEmptyRest = !isActive && !committedItem;
+    // Overlay the placeholder whenever the segment is empty so the "…"
+    // truncation is identical whether or not the segment is focused.
+    const showPlaceholder = display === "" && ph !== "";
 
     const node = (
+      <span key={`seg-${key}`} className="bcv1-seg">
       <input
-        key={`seg-${key}`}
         ref={isActive ? inputRef : undefined}
         readOnly={!isActive}
         tabIndex={isActive ? 0 : -1}
@@ -621,10 +694,14 @@ function PickerV1({
         onChange={
           isActive
             ? (e) => {
-                setText(e.target.value);
+                const v = e.target.value;
+                setText(v);
                 setPrefilled(false); // real typing → filter by the query
                 setHi(0);
                 setMenuOpen(true);
+                // Deleting all text in a committed segment unselects it, so the
+                // real placeholder returns and it doesn't reappear on blur.
+                if (v === "" && committed[key]) clearSegment(i);
               }
             : undefined
         }
@@ -633,6 +710,12 @@ function PickerV1({
         onKeyDown={isActive ? onInputKeyDown : undefined}
         onClick={isToken ? () => editSegment(i) : undefined}
       />
+        {showPlaceholder && (
+          <span className="bcv1-ph" aria-hidden="true">
+            {ph}
+          </span>
+        )}
+      </span>
     );
 
     if (fieldParts.length > 0) {
@@ -737,7 +820,7 @@ function PickerV1({
                   /* stub: wire to real create-new-code flow */
                 }}
               >
-                Add {label.toLowerCase()}
+                Create new {label.toLowerCase()}
               </Button>
             </div>
           </div>
@@ -761,7 +844,14 @@ function PickerV1({
 
         <Flex direction="column" gap="1">
           <FieldLabel id={labelId}>Budget Code</FieldLabel>
-          <div ref={wrapRef} style={{ width: fieldWidth, maxWidth: "100%" }}>
+          <div
+            ref={wrapRef}
+            style={{
+              width: fieldWidth,
+              minWidth: measuredMinWidth,
+              maxWidth: "100%",
+            }}
+          >
             <Popover
               open={open}
               modal={false}
@@ -1008,6 +1098,13 @@ function PickerV2({
     return () => ro.disconnect();
   }, []);
 
+  // Floor the field width at the point where every placeholder shows in full.
+  const measuredMinWidth = usePlaceholderMinWidth(
+    wrapRef,
+    SEGMENT_ORDER.map((k) => SEGMENTS[k].label),
+    size,
+  );
+
   // After focusing a committed segment, select its prefilled token so typing
   // replaces it (the "select all" highlight, in place of a chip). Runs after
   // the controlled value is applied so the selection isn't collapsed.
@@ -1181,14 +1278,18 @@ function PickerV2({
     const committedItem = committed[key];
     const isActive = i === activeIndex;
     const display = isActive ? text : (committedItem?.token ?? "");
-    // Placeholder: committed token (so a set-then-cleared field never looks
-    // empty) else the segment name.
-    const ph = committedItem && isActive ? committedItem.token : committedItem && !isActive ? "" : SEGMENTS[key].label;
+    // Placeholder: the active segment always shows its real label (so clearing
+    // its text reveals e.g. "Cost Type", not the old token). A committed,
+    // non-active segment shows its token as the value (no placeholder).
+    const ph = committedItem && !isActive ? "" : SEGMENTS[key].label;
     const isToken = !isActive && !!committedItem;
+    // Show the overlay placeholder whenever the segment is empty (so the "…"
+    // truncation is identical whether or not the segment is focused).
+    const showPlaceholder = display === "" && ph !== "";
 
     fieldParts.push(
+      <span key={`seg-${key}`} className="bcv1-seg">
       <input
-        key={`seg-${key}`}
         ref={(el) => {
           inputRefs.current[i] = el;
         }}
@@ -1208,15 +1309,28 @@ function PickerV2({
         }
         size={1}
         onChange={(e) => {
-          setText(e.target.value);
+          const v = e.target.value;
+          setText(v);
           setPrefilled(false); // real typing → filter by the query
           setHi(0);
           setMenuOpen(true);
+          // Deleting all text in a committed segment unselects it, so the real
+          // placeholder returns and the old value doesn't reappear on blur.
+          if (v === "" && committed[key]) {
+            setCommitted((prev) => ({ ...prev, [key]: null }));
+            setLive(`${SEGMENTS[key].label} cleared`);
+          }
         }}
         onFocus={() => onSegFocus(i)}
         onBlur={onSegBlur}
         onKeyDown={(e) => onSegKeyDown(e, i)}
-      />,
+      />
+        {showPlaceholder && (
+          <span className="bcv1-ph" aria-hidden="true">
+            {ph}
+          </span>
+        )}
+      </span>,
     );
 
     if (i < SEGMENT_ORDER.length - 1) {
@@ -1317,7 +1431,7 @@ function PickerV2({
                   /* stub: wire to real create-new-code flow */
                 }}
               >
-                Add {label.toLowerCase()}
+                Create new {label.toLowerCase()}
               </Button>
             </div>
           </div>
@@ -1329,9 +1443,23 @@ function PickerV2({
     <Card padding="large" style={{ width: "100%", height: "100%" }}>
       <Flex direction="column" gap="4">
         <Flex direction="column" gap="1">
-          <Text variant="eyebrow" size="small">
-            v2 · One field, separate inputs
-          </Text>
+          <Flex justifyContent="space-between" alignItems="center" gap="2">
+            <Text variant="eyebrow" size="small">
+              v2 · One field, separate inputs
+            </Text>
+            <button
+              type="button"
+              className="bcv2-pick"
+              aria-label="Selected direction"
+              title="Selected direction"
+            >
+              <Icon
+                svg={CheckIcon}
+                size="small"
+                color="var(--a2-foreground-color-success, #1a8245)"
+              />
+            </button>
+          </Flex>
           <Text variant="body" size="small" subdued>
             Same fused field as v1, but each segment is its own real combobox.
             Tab / Shift+Tab move between segments natively; type to search;
@@ -1342,7 +1470,14 @@ function PickerV2({
 
         <Flex direction="column" gap="1">
           <FieldLabel id={labelId}>Budget Code</FieldLabel>
-          <div ref={wrapRef} style={{ width: fieldWidth, maxWidth: "100%" }}>
+          <div
+            ref={wrapRef}
+            style={{
+              width: fieldWidth,
+              minWidth: measuredMinWidth,
+              maxWidth: "100%",
+            }}
+          >
             <Popover
               open={open}
               modal={false}
@@ -1757,7 +1892,7 @@ function PickerV0({
                       value={composite[key]}
                       onSelectedOptionChange={(option) => selectAndAdvance(i, option)}
                       // Stock Anvil "add new item" footer button (like v1).
-                      addItemLabel={`Add ${SEGMENTS[key].label.toLowerCase()}`}
+                      addItemLabel={`Create new ${SEGMENTS[key].label.toLowerCase()}`}
                       onAddNewItem={() => {
                         /* stub: wire to real create-new-code flow */
                       }}
@@ -1983,19 +2118,19 @@ export default function BudgetCodePicker() {
           </div>
         </Flex>
 
-        {/* Row 1: v2 (re-architected) next to v1 (original bespoke). Row 2: v0
-            on its own row at a matching half-width. The slider above constrains
-            just the field container inside each card, not the whole card. */}
-        <Flex gap="4" alignItems="flex-start" wrap="wrap">
-          <div style={{ flex: 1, minWidth: 420 }}>
+        {/* Row 1: v2 (the chosen direction) featured + centered. Row 2: v1
+            (original bespoke) and v0 (stock SelectFields) for comparison. The
+            slider above constrains just the field inside each card. */}
+        <Flex justifyContent="center">
+          <div style={{ width: "calc(50% - 8px)", minWidth: 420 }}>
             <PickerV2 size={size} fieldWidth={fieldWidth} keys={keys} />
           </div>
+        </Flex>
+        <Flex gap="4" alignItems="flex-start" wrap="wrap">
           <div style={{ flex: 1, minWidth: 420 }}>
             <PickerV1 size={size} fieldWidth={fieldWidth} keys={keys} />
           </div>
-        </Flex>
-        <Flex gap="4">
-          <div style={{ width: "calc(50% - 8px)", minWidth: 420 }}>
+          <div style={{ flex: 1, minWidth: 420 }}>
             <PickerV0 size={size} fieldWidth={fieldWidth} keys={keys} />
           </div>
         </Flex>
