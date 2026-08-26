@@ -1,4 +1,5 @@
 import { Routes, Route } from "react-router-dom";
+import lastUpdated from "virtual:experiment-dates";
 import Landing, { type ExperimentMeta } from "./landing/Landing";
 
 const modules = import.meta.glob<{
@@ -6,10 +7,14 @@ const modules = import.meta.glob<{
   meta: ExperimentMeta;
 }>("./experiments/*/index.tsx", { eager: true });
 
-const experiments = Object.values(modules).map((m) => ({
-  ...m.meta,
-  Component: m.default,
-}));
+const experiments = Object.entries(modules).map(([id, m]) => {
+  const folder = id.match(/\/experiments\/([^/]+)\//)?.[1];
+  return {
+    ...m.meta,
+    date: (folder && lastUpdated[folder]) || m.meta.date,
+    Component: m.default,
+  };
+});
 
 function App() {
   return (

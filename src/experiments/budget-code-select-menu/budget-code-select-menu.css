@@ -1,0 +1,291 @@
+/* Budget Code · SelectMenu — Adam's idea: N Anvil Buttons with SelectMenus
+   inside a field-looking shell. Uses --a2- tokens with Figma fallbacks.
+   Rules that restyle Anvil internals are marked DEVIATION. */
+
+/* ── Field shell ─────────────────────────────────────────────────────── */
+.bcsm-shell {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--a2-border-color-default, #c2c8ce);
+  border-radius: var(--a2-border-radius-md, 6px);
+  background: var(--a2-background-color, #fff);
+  font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+  cursor: text;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.bcsm-shell:focus-within {
+  border-color: var(--a2-foreground-color-primary, #0265dc);
+  outline: 2px solid var(--a2-foreground-color-primary, #0265dc);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bcsm-shell {
+    transition: none;
+  }
+}
+
+.bcsm-shell--small {
+  min-height: 32px;
+  padding: 0 6px;
+}
+
+/* Segment trigger: strip Anvil Button chrome so it reads as a token inside
+   the field, not a button sitting on top of one. */
+.bcsm-shell .bcsm-token {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 6px 4px;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--a2-foreground-color-subtle, #8b8b8b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-content: flex-start;
+}
+
+.bcsm-shell--small .bcsm-token {
+  font-size: 14px;
+  padding: 4px 4px;
+}
+
+/* Filled token: primary text, slightly heavier. */
+.bcsm-shell .bcsm-token--filled {
+  font-weight: 700;
+  color: var(--a2-foreground-color, #141414);
+}
+
+/* Hover a closed token: gray band like a menu row, not blue text. */
+.bcsm-shell .bcsm-token:hover {
+  background: var(--a2-background-color-strong-hover, #ececed);
+}
+
+/* Open / keyboard-focused token: same blue highlight v1 uses while editing. */
+.bcsm-shell .bcsm-token[data-state="open"],
+.bcsm-shell .bcsm-token:focus-visible {
+  background: var(--a2-background-color-primary-subdued, #e0f2ff);
+  color: var(--a2-foreground-color-primary, #0265dc);
+  outline: none;
+  box-shadow: none;
+}
+
+.bcsm-sep {
+  flex: none;
+  padding: 0 2px;
+  color: var(--a2-foreground-color-subdued, #606162);
+  user-select: none;
+}
+
+.bcsm-shell--small .bcsm-sep {
+  font-size: 14px;
+}
+
+.bcsm-clear {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.bcsm-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Customizations list ─────────────────────────────────────────────── */
+.bcsm-notes {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+.bcsm-notes code {
+  font-size: 12px;
+}
+
+/* ── Top-right controls (dev harness) ────────────────────────────────── */
+.bcsm-controls {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 12px;
+  font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
+}
+
+.bcsm-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border: 1px solid var(--a2-border-color-subdued, #dfe0e1);
+  border-radius: 10px;
+  background: transparent;
+}
+
+.bcsm-control-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--a2-foreground-color-subdued, #606162);
+  white-space: nowrap;
+}
+
+.bcsm-width-value {
+  min-width: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+.bcsm-control [class*="segmented-control"],
+.bcsm-control [class*="segmented-control"] [class*="segment"] {
+  font-size: 13px !important;
+}
+
+.bcsm-width-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 160px;
+  height: 16px;
+}
+
+.bcsm-width-trackline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--a2-border-color-default, #c2c8ce);
+  pointer-events: none;
+}
+
+.bcsm-width-default {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--a2-foreground-color-subdued, #606162);
+  pointer-events: none;
+}
+
+.bcsm-width-slider {
+  position: relative;
+  width: 160px;
+  height: 16px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+.bcsm-width-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.bcsm-width-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.bcsm-width-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--a2-foreground-color-primary, #0265dc);
+  border: 2px solid var(--a2-background-color, #fff);
+  box-shadow: 0 1px 3px rgba(20, 20, 20, 0.2);
+}
+
+.bcsm-width-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--a2-foreground-color-primary, #0265dc);
+  border: 2px solid var(--a2-background-color, #fff);
+  box-shadow: 0 1px 3px rgba(20, 20, 20, 0.2);
+}
+
+.bcsm-width-slider:focus-visible {
+  outline: 2px solid var(--a2-foreground-color-primary, #0265dc);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+/* ── Menu row layout (same deviation as v0) ──────────────────────────── */
+/* DEVIATION: Anvil stacks option title over description. Flip to a row so
+   budget-code rows read inline (bold token + subdued description). Portaled
+   menus sit in the top layer, so this is a page-global override. */
+[data-anv-part="popover"] {
+  --a2-mod-option-content-title-line-clamp: 1;
+  --a2-mod-option-content-description-line-clamp: 1;
+}
+
+[data-anv-part="popover"] [data-anv-part="menu"] {
+  max-height: 300px;
+}
+
+[data-anv-part="popover"] div:has(> [class*="title"]) {
+  flex-direction: row !important;
+  align-items: baseline !important;
+  justify-content: flex-start !important;
+  column-gap: 8px;
+}
+
+[data-anv-part="popover"] [class*="title"] {
+  flex: none;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+[data-anv-part="popover"] [class*="description"] {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+}
+
+[data-anv-part="popover"] [class*="single-selected"] [class*="title"],
+[data-anv-part="popover"] [class*="single-selected"] [class*="description"] {
+  color: var(--a2-foreground-color-primary, #0265dc) !important;
+}

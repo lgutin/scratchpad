@@ -3,6 +3,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
 import tailwindcss from "@tailwindcss/vite";
+import { experimentDatesPlugin } from "./vite.experiment-dates";
 
 export default defineConfig({
   base: "/scratchpad/",
@@ -12,6 +13,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    experimentDatesPlugin(),
     react(),
     // Tailwind v4 is used ONLY by the landing page (src/landing/landing.css),
     // which imports Tailwind's theme + utilities layers WITHOUT preflight so it
