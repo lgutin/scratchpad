@@ -30,6 +30,13 @@ import {
 import CheckIcon from "@servicetitan/anvil2/assets/icons/material/round/check.svg";
 import CloseIcon from "@servicetitan/anvil2/assets/icons/material/round/close.svg";
 import AddIcon from "@servicetitan/anvil2/assets/icons/material/round/add.svg";
+import {
+  autoPlacement,
+  autoUpdate,
+  computePosition,
+  offset,
+  size,
+} from "@floating-ui/dom";
 import "./budget-code-v1.css";
 
 export const meta = {
@@ -1912,6 +1919,109 @@ function PickerV1({
 //      combobox, native Tab moves focus, one shared wide menu tracks focus.
 // ===========================================================================
 
+// Native top-layer popover positioned with floating-ui, mirroring Hammer's
+// internal OptionsPopover: anchors to the field shell (the reference), flips ONLY
+// between vertical placements (never beside the field), sizes to the reference
+// width, and lives in the browser top layer so table-cell / canvas overflow can't
+// clip it. Replaces Anvil's <Popover>, whose flip/shift can shove the menu
+// sideways in a clipped container (the "menu to the right of the segment" bug).
+function NativeOptionsPopover({
+  id,
+  referenceRef,
+  open,
+  onClose,
+  width = "reference",
+  children,
+}: {
+  id: string;
+  referenceRef: RefObject<HTMLDivElement | null>;
+  open: boolean;
+  onClose: () => void;
+  width?: "reference" | number | string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Toggle the native top-layer popover.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    try {
+      if (open) el.showPopover();
+      else el.hidePopover();
+    } catch {
+      /* already in the requested state */
+    }
+  }, [open]);
+
+  // Position: anchor to the reference (field shell); flip only between vertical
+  // placements; match the reference width and cap to available space. Kept in
+  // sync via autoUpdate (scroll / resize / layout).
+  useEffect(() => {
+    const floating = ref.current;
+    const reference = referenceRef.current;
+    if (!open || !floating || !reference) return;
+    const update = () => {
+      void computePosition(reference, floating, {
+        placement: "bottom-start",
+        middleware: [
+          offset(8), // match Hammer's OptionsPopover gap
+          autoPlacement({
+            allowedPlacements: [
+              "bottom-start",
+              "bottom-end",
+              "top-start",
+              "top-end",
+            ],
+            padding: 8,
+          }),
+          size({
+            padding: 8,
+            apply({ rects, elements, availableHeight, availableWidth }) {
+              const resolved =
+                width === "reference"
+                  ? `${rects.reference.width}px`
+                  : typeof width === "number"
+                    ? `${width}px`
+                    : width;
+              Object.assign(elements.floating.style, {
+                width: resolved,
+                maxWidth: `${Math.max(0, availableWidth)}px`,
+                maxHeight: `${Math.max(0, availableHeight)}px`,
+              });
+            },
+          }),
+        ],
+      }).then(({ x, y }) => {
+        floating.style.left = `${x}px`;
+        floating.style.top = `${y}px`;
+      });
+    };
+    const cleanup = autoUpdate(reference, floating, update);
+    return () => cleanup();
+  }, [open, referenceRef, width]);
+
+  // Immediate click-outside dismissal (the trigger keeps its own handling).
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (ref.current?.contains(t)) return;
+      if (referenceRef.current?.contains(t)) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, onClose, referenceRef]);
+
+  return (
+    <div ref={ref} id={id} popover="manual" className="bcv1-native-popover">
+      {children}
+    </div>
+  );
+}
+
 function PickerV2({
   size,
   fieldWidth,
@@ -1956,6 +2066,8 @@ function PickerV2({
   // focus into that segment on close; onSegFocus consumes this flag to bounce the
   // field straight to rest (no menu, no caret, no "selected blue" flash).
   const restAfterCreateRef = useRef(false);
+  // The element the shared menu anchors to: the fused-field shell.
+  const shellRef = useRef<HTMLDivElement>(null);
   // True while a Create dialog is open: keep the typed value in the segment
   // (visible underneath) instead of clearing it on blur; discarded on cancel.
   const createDialogActiveRef = useRef(false);
@@ -2474,57 +2586,54 @@ function PickerV2({
               maxWidth: "100%",
             }}
           >
-            <Popover
-              open={open}
-              modal={false}
-              disableCaret
-              noPadding
-              placement="bottom-start"
-              onClickOutside={() => setMenuOpen(false)}
+            {/* Fused-field shell = the menu's anchor (whole field, not an inner
+                input). No Anvil Popover: the menu is a native top-layer popover
+                anchored here (see NativeOptionsPopover) so it can't be clipped or
+                shoved sideways in a table cell / clipped canvas. */}
+            <div
+              ref={shellRef}
+              role="group"
+              aria-labelledby={labelId}
+              className={`bcv1-shell${size === "small" ? " bcv1-shell--small" : ""}`}
+              onClick={(e) => {
+                // Clicking the blank shell area focuses the first empty segment
+                // (or the last, if the code is complete). Clicks on the inputs
+                // themselves focus natively.
+                if (e.target !== e.currentTarget) return;
+                const firstEmpty = SEGMENT_ORDER.findIndex(
+                  (k) => !committed[k],
+                );
+                const target =
+                  firstEmpty === -1 ? SEGMENT_ORDER.length - 1 : firstEmpty;
+                inputRefs.current[target]?.focus();
+              }}
             >
-              <Popover.Trigger>
-                {(triggerProps: Record<string, unknown>) => (
-                  <div
-                    {...stripAria(triggerProps)}
-                    role="group"
-                    aria-labelledby={labelId}
-                    className={`bcv1-shell${size === "small" ? " bcv1-shell--small" : ""}`}
+              {fieldParts}
+              {anyCommitted && (
+                <span className="bcv1-clear">
+                  <Button
+                    appearance="ghost"
+                    size="small"
+                    icon={CloseIcon}
+                    aria-label="Clear budget code"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
-                      // Clicking the blank shell area focuses the first empty
-                      // segment (or the last, if the code is complete). Clicks
-                      // on the inputs themselves focus natively.
-                      if (e.target !== e.currentTarget) return;
-                      const firstEmpty = SEGMENT_ORDER.findIndex(
-                        (k) => !committed[k],
-                      );
-                      const target =
-                        firstEmpty === -1
-                          ? SEGMENT_ORDER.length - 1
-                          : firstEmpty;
-                      inputRefs.current[target]?.focus();
+                      e.stopPropagation();
+                      clearAll();
                     }}
-                  >
-                    {fieldParts}
-                    {anyCommitted && (
-                      <span className="bcv1-clear">
-                        <Button
-                          appearance="ghost"
-                          size="small"
-                          icon={CloseIcon}
-                          aria-label="Clear budget code"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            clearAll();
-                          }}
-                        />
-                      </span>
-                    )}
-                  </div>
-                )}
-              </Popover.Trigger>
-              <Popover.Content>{menu}</Popover.Content>
-            </Popover>
+                  />
+                </span>
+              )}
+            </div>
+            <NativeOptionsPopover
+              id={`${uid}-popover`}
+              referenceRef={shellRef}
+              open={open}
+              onClose={() => setMenuOpen(false)}
+              width="reference"
+            >
+              {menu}
+            </NativeOptionsPopover>
           </div>
         </Flex>
 

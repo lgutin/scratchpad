@@ -202,6 +202,47 @@
   border-radius: var(--a2-border-radius-medium, 6px);
 }
 
+/* ── v2 native top-layer menu (replaces Anvil Popover) ─────────────────────
+   Surface + positioning mirror Hammer's internal OptionsPopover. The menu is a
+   native `popover="manual"` element, so it renders in the browser top layer and
+   can't be clipped by a table cell / overflow ancestor. floating-ui sets
+   left/top/width/max-height inline; here we own the surface (bg, border, shadow,
+   radius) that Anvil's Popover.Content used to provide, plus the 300px width
+   floor. Scoped to v2 (`.bcv1-native-popover`), so v1's Popover is untouched. */
+.bcv1-native-popover {
+  position: absolute;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  min-width: 300px;
+  max-width: 100%;
+  overflow: hidden;
+  border: var(--a2-size-quarter, 1px) solid
+    var(--a2-border-color-subdued, #e6e6e6);
+  border-radius: var(--a2-border-radius-medium, 6px);
+  background-color: var(--a2-background-color-strong, #f9f9f9);
+  box-shadow: var(
+      --a2-shadow-size-float,
+      var(--a2-size-0, 0) var(--a2-size-half, 2px) var(--a2-size-2, 8px)
+    )
+    var(--a2-shadow-color-default, rgba(26, 26, 26, 0.08));
+}
+
+.bcv1-native-popover:popover-open {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Inner menu fills the popover; the popover owns width + the 300px floor. */
+.bcv1-native-popover .bcv1-menu {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
 /* Section header: matches Anvil's `SelectOptions.pinned-section-header`
    (padding: size-2 size-4). Uppercase eyebrow treatment is our grouping style. */
 .bcv1-menu-header {

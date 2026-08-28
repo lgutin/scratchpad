@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "@amcharts/amcharts5": "^5.16.2",
+    "@floating-ui/dom": "^1.8.0",
     "@ionic/react": "^8.8.2",
     "@servicetitan/anvil2": "^3.5.0",
     "@servicetitan/anvil2-ext-atlas": "^4.0.1",
