@@ -13,7 +13,8 @@
   align-items: center;
   gap: 0;
   width: 100%;
-  min-height: 44px;
+  /* Match Anvil2's standard medium field height (40px); small is 32px below. */
+  min-height: 40px;
   /* Left inset = shell padding (8px) + first input padding (4px) = 12px, to
      match Anvil SelectField's text offset from the border. */
   padding: 0 8px;
