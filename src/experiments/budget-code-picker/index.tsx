@@ -15,6 +15,8 @@ import {
 import {
   Button,
   Card,
+  Checkbox,
+  Dialog,
   FieldLabel,
   Flex,
   Icon,
@@ -22,6 +24,7 @@ import {
   SegmentedControl,
   SelectFieldSync,
   Text,
+  TextField,
   type SelectFieldOption,
 } from "@servicetitan/anvil2";
 import CheckIcon from "@servicetitan/anvil2/assets/icons/material/round/check.svg";
@@ -50,6 +53,21 @@ const SEGMENTS: Record<SegmentKey, { label: string }> = {
 
 // A budget code is the composite of one item per segment, in this order.
 const SEGMENT_ORDER: SegmentKey[] = ["cost-code", "cost-type", "phase"];
+
+// ---------------------------------------------------------------------------
+// Config knobs — edit these before handing off to eng. They drive all three
+// pickers (V0 / V1 / V2) from one place.
+// ---------------------------------------------------------------------------
+
+// Preselect segments on load. Reference a mock item id from COST_CODES /
+// COST_TYPES / PHASES below (ids look like "cc-2", "ct-1", "ph-1"). Any subset
+// is allowed — list only the segments you want prefilled and leave the rest
+// out to start them empty. Set to {} to start with nothing selected.
+const DEFAULT_SELECTION: Partial<Record<SegmentKey, string>> = {
+  "cost-code": "cc-2", // 01-200 · Project Management
+  "cost-type": "ct-1", // Labor
+  // "phase": "ph-1",  // uncomment to also preselect a phase
+};
 
 type FieldSize = "small" | "medium";
 
@@ -164,6 +182,613 @@ const ITEMS_BY_SEGMENT: Record<SegmentKey, BudgetOption[]> = {
   phase: PHASES,
 };
 
+// CSI division names for the Parent field in Create New Cost Code.
+const DIVISION_NAMES: Record<string, string> = {
+  "01": "General Requirements",
+  "02": "Sitework",
+  "03": "Concrete",
+  "04": "Masonry",
+  "05": "Metals",
+  "06": "Wood",
+  "07": "Thermal & Moisture",
+  "08": "Openings",
+  "09": "Finishes",
+  "10": "Specialties",
+  "11": "Equipment",
+  "12": "Furnishings",
+  "21": "Fire Suppression",
+  "22": "Plumbing",
+  "23": "HVAC",
+  "26": "Electrical",
+  "27": "Communications",
+  "28": "Electronic Safety",
+  "31": "Earthwork",
+  "32": "Exterior Improvements",
+  "33": "Utilities",
+};
+
+// "None" (no parent) — the default Parent selection.
+const NONE_PARENT: SelectFieldOption = { id: "__none__", label: "None" };
+
+function parentOptionsFrom(codes: BudgetOption[]): SelectFieldOption[] {
+  const seen = new Set<string>();
+  const options: SelectFieldOption[] = [];
+  for (const code of codes) {
+    const id = code.token.match(/^(\d{2})/)?.[1];
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const name = DIVISION_NAMES[id] ?? "Division";
+    options.push({
+      id,
+      label: `${id} ${name}`,
+      searchText: `${id} ${name}`,
+      // Bold division number + subdued name, matching the picker's menu rows.
+      content: { title: id, description: name },
+    });
+  }
+  options.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return [NONE_PARENT, ...options];
+}
+
+function nextCostCodeId(existing: BudgetOption[]): number {
+  let max = 0;
+  for (const o of existing) {
+    const n = Number(String(o.id).replace(/^cc-/, ""));
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
+function assembleCostCode(parentId: string | null, suffix: string): string {
+  const s = suffix.trim();
+  if (!parentId) return s;
+  const prefix = `${parentId}-`;
+  if (s.toLowerCase().startsWith(prefix.toLowerCase())) return s;
+  return `${prefix}${s}`;
+}
+
+function CreateCostCodeDialog({
+  open,
+  onClose,
+  existingCodes,
+  onCreated,
+  onClosed,
+  initialCode = "",
+}: {
+  open: boolean;
+  onClose: () => void;
+  existingCodes: BudgetOption[];
+  onCreated: (option: BudgetOption) => void;
+  onClosed?: () => void;
+  // Seed the Cost Code field from what the user already typed in the picker.
+  initialCode?: string;
+}) {
+  const parentOptions = parentOptionsFrom(existingCodes);
+  const [parent, setParent] = useState<SelectFieldOption | null>(NONE_PARENT);
+  const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
+  const [applyToProject, setApplyToProject] = useState(false);
+  const [codeError, setCodeError] = useState("");
+  // True when the dialog was opened with a code the user had already started in
+  // the picker. Drives placeholder visibility + initial focus.
+  const [seeded, setSeeded] = useState(false);
+
+  const reset = () => {
+    setParent(NONE_PARENT);
+    setCode("");
+    setDescription("");
+    setApplyToProject(false);
+    setCodeError("");
+    setSeeded(false);
+  };
+
+  // When the dialog opens, seed from the picker's typed text. If it looks like
+  // "NN-rest" and NN is a known division, preselect that Parent and drop the
+  // prefix; otherwise put the whole thing in the Cost Code field.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      const raw = initialCode.trim();
+      setSeeded(raw.length > 0);
+      const m = raw.match(/^(\d{2})-(.*)$/);
+      const division = m
+        ? parentOptions.find((o) => o.id === m[1])
+        : undefined;
+      if (m && division) {
+        setParent(division);
+        setCode(m[2]);
+      } else {
+        setParent(NONE_PARENT);
+        setCode(raw);
+      }
+    }
+    wasOpen.current = open;
+    // parentOptions is derived from existingCodes each render; only re-seed on
+    // an open transition or when the seed text changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialCode]);
+
+  // When opened with a code already started, move focus to the next field that
+  // needs input (Description) once Anvil's own open-focus has settled. (Anvil's
+  // initialFocusResolver isn't honored in this version, so drive it directly.)
+  useEffect(() => {
+    if (!open || initialCode.trim().length === 0) return;
+    const id = window.setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        'dialog[open] input[data-field="description"], [role="dialog"] input[data-field="description"]',
+      );
+      el?.focus();
+    }, 80);
+    return () => window.clearTimeout(id);
+  }, [open, initialCode]);
+
+  const parentId =
+    parent && parent.id !== NONE_PARENT.id ? String(parent.id) : null;
+  const prefix = parentId ? `${parentId}-` : undefined;
+  // Once the user has started (seeded from the picker, or picked a Parent), drop
+  // the "e.g." example placeholders — the prefix (e.g. "03-") still shows.
+  const started = seeded || parentId != null;
+  const canCreate = code.trim().length > 0 && description.trim().length > 0;
+
+  const codeExists = (value: string) => {
+    const full = assembleCostCode(parentId, value);
+    if (!full) return false;
+    return existingCodes.some(
+      (o) => o.token.toLowerCase() === full.toLowerCase(),
+    );
+  };
+
+  // On blur: flag a duplicate as soon as the user leaves the field.
+  const validateCode = () => {
+    setCodeError(codeExists(code) ? "Cost code already exists" : "");
+  };
+
+  const handleCreate = () => {
+    const full = assembleCostCode(parentId, code);
+    if (!full || !description.trim()) return;
+    if (codeExists(code)) {
+      setCodeError("Cost code already exists");
+      return;
+    }
+    onCreated(
+      costCode(
+        nextCostCodeId(existingCodes),
+        full,
+        description.trim(),
+        applyToProject,
+      ),
+    );
+    onClose();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      onCloseAnimationComplete={() => {
+        reset();
+        onClosed?.();
+      }}
+    >
+      {open && (
+        <>
+          <Dialog.Header>Create New Cost Code</Dialog.Header>
+          <Dialog.Content>
+            <Flex direction="column" gap="6" alignItems="stretch" style={{ width: "100%" }}>
+              <div className="bc-parent-field" style={{ width: "100%" }}>
+                <SelectFieldSync
+                  label="Parent"
+                  placeholder="None"
+                  options={parentOptions}
+                  value={parent}
+                  onSelectedOptionChange={(option) => {
+                    setParent(option ?? NONE_PARENT);
+                    setCodeError("");
+                  }}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div className="bc-costcode-field" style={{ width: "100%" }}>
+                <TextField
+                  label="Cost Code"
+                  placeholder={started ? "" : "e.g. 03"}
+                  prefix={prefix}
+                  value={code}
+                  error={codeError || false}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCode(v);
+                    // Per Anvil: once the field is errored, re-validate on each
+                    // keystroke so it resolves the instant the value is valid.
+                    if (codeError)
+                      setCodeError(
+                        codeExists(v) ? "Cost code already exists" : "",
+                      );
+                  }}
+                  onBlur={validateCode}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <TextField
+                label="Description"
+                placeholder={started ? "" : "e.g. Concrete"}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                data-field="description"
+                style={{ width: "100%" }}
+              />
+              <Checkbox
+                label="Apply to this project only"
+                checked={applyToProject}
+                onChange={(e) => setApplyToProject(e.target.checked)}
+              />
+            </Flex>
+          </Dialog.Content>
+          <Dialog.Footer>
+            <Flex gap="3" justifyContent="flex-end">
+              <Dialog.CancelButton>Cancel</Dialog.CancelButton>
+              <Button
+                appearance="primary"
+                disabled={!canCreate}
+                onClick={handleCreate}
+              >
+                Create
+              </Button>
+            </Flex>
+          </Dialog.Footer>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+// Predefined "Category" picklist for Create New Cost Type. Plain labels (no
+// code/description), so in .bc-parent-field they render regular-weight. "None"
+// leads and is the default, mirroring the Parent field.
+const COST_TYPE_CATEGORIES: SelectFieldOption[] = [
+  NONE_PARENT,
+  { id: "labor", label: "Labor" },
+  { id: "material", label: "Material" },
+  { id: "equipment", label: "Equipment" },
+  { id: "subcontractor", label: "Subcontractor" },
+  { id: "overhead", label: "Overhead" },
+  { id: "other", label: "Other" },
+];
+
+function nextCostTypeId(existing: BudgetOption[]): number {
+  let max = 0;
+  for (const o of existing) {
+    const n = Number(String(o.id).replace(/^ct-/, ""));
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
+// Mirrors CreateCostCodeDialog, but there's no parent (so no prefix) and the
+// first field is a predefined "Category" picklist instead. The "Cost Type"
+// field is the token shown in the assembled code; Description is its name.
+function CreateCostTypeDialog({
+  open,
+  onClose,
+  existingTypes,
+  onCreated,
+  onClosed,
+  initialCode = "",
+}: {
+  open: boolean;
+  onClose: () => void;
+  existingTypes: BudgetOption[];
+  onCreated: (option: BudgetOption) => void;
+  onClosed?: () => void;
+  // Seed the Cost Type field from what the user already typed in the picker.
+  initialCode?: string;
+}) {
+  const [category, setCategory] = useState<SelectFieldOption | null>(
+    NONE_PARENT,
+  );
+  const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
+  const [applyToProject, setApplyToProject] = useState(false);
+  const [codeError, setCodeError] = useState("");
+  const [seeded, setSeeded] = useState(false);
+
+  const reset = () => {
+    setCategory(NONE_PARENT);
+    setCode("");
+    setDescription("");
+    setApplyToProject(false);
+    setCodeError("");
+    setSeeded(false);
+  };
+
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      const raw = initialCode.trim();
+      setSeeded(raw.length > 0);
+      setCode(raw);
+    }
+    wasOpen.current = open;
+  }, [open, initialCode]);
+
+  // Seeded → move focus to the next field that needs input (Description) once
+  // Anvil's open-focus settles.
+  useEffect(() => {
+    if (!open || initialCode.trim().length === 0) return;
+    const id = window.setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        'dialog[open] input[data-field="description"], [role="dialog"] input[data-field="description"]',
+      );
+      el?.focus();
+    }, 80);
+    return () => window.clearTimeout(id);
+  }, [open, initialCode]);
+
+  // Drop the "e.g." example placeholders once the user has started (seeded from
+  // the picker, or picked a Category other than None).
+  const started =
+    seeded || (category != null && category.id !== NONE_PARENT.id);
+  const canCreate = code.trim().length > 0 && description.trim().length > 0;
+
+  const typeExists = (value: string) => {
+    const token = value.trim();
+    if (!token) return false;
+    return existingTypes.some(
+      (o) => o.token.toLowerCase() === token.toLowerCase(),
+    );
+  };
+
+  // On blur: flag a duplicate as soon as the user leaves the field.
+  const validateCode = () => {
+    setCodeError(typeExists(code) ? "Cost type already exists" : "");
+  };
+
+  const handleCreate = () => {
+    const token = code.trim();
+    if (!token || !description.trim()) return;
+    if (typeExists(token)) {
+      setCodeError("Cost type already exists");
+      return;
+    }
+    onCreated({
+      id: `ct-${nextCostTypeId(existingTypes)}`,
+      label: description.trim(),
+      group: "cost-type",
+      token,
+      extra: { onProject: applyToProject },
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      onCloseAnimationComplete={() => {
+        reset();
+        onClosed?.();
+      }}
+    >
+      {open && (
+        <>
+          <Dialog.Header>Create New Cost Type</Dialog.Header>
+          <Dialog.Content>
+            <Flex direction="column" gap="6" alignItems="stretch" style={{ width: "100%" }}>
+              <div className="bc-parent-field" style={{ width: "100%" }}>
+                <SelectFieldSync
+                  label="Category"
+                  placeholder="None"
+                  options={COST_TYPE_CATEGORIES}
+                  value={category}
+                  onSelectedOptionChange={(option) =>
+                    setCategory(option ?? NONE_PARENT)
+                  }
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <TextField
+                label="Cost Type"
+                placeholder={started ? "" : "e.g. Labor"}
+                value={code}
+                error={codeError || false}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCode(v);
+                  // Per Anvil: once errored, re-validate on each keystroke.
+                  if (codeError)
+                    setCodeError(
+                      typeExists(v) ? "Cost type already exists" : "",
+                    );
+                }}
+                onBlur={validateCode}
+                style={{ width: "100%" }}
+              />
+              <TextField
+                label="Description"
+                placeholder={started ? "" : "e.g. On-site labor"}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                data-field="description"
+                style={{ width: "100%" }}
+              />
+              <Checkbox
+                label="Apply to this project only"
+                checked={applyToProject}
+                onChange={(e) => setApplyToProject(e.target.checked)}
+              />
+            </Flex>
+          </Dialog.Content>
+          <Dialog.Footer>
+            <Flex gap="3" justifyContent="flex-end">
+              <Dialog.CancelButton>Cancel</Dialog.CancelButton>
+              <Button
+                appearance="primary"
+                disabled={!canCreate}
+                onClick={handleCreate}
+              >
+                Create
+              </Button>
+            </Flex>
+          </Dialog.Footer>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+function nextPhaseId(existing: BudgetOption[]): number {
+  let max = 0;
+  for (const o of existing) {
+    const n = Number(String(o.id).replace(/^ph-/, ""));
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
+// Same conventions as the Cost Code / Cost Type dialogs, but a phase has just a
+// Code + Description (no parent/category, no "apply to project").
+function CreatePhaseDialog({
+  open,
+  onClose,
+  existingPhases,
+  onCreated,
+  onClosed,
+  initialCode = "",
+}: {
+  open: boolean;
+  onClose: () => void;
+  existingPhases: BudgetOption[];
+  onCreated: (option: BudgetOption) => void;
+  onClosed?: () => void;
+  initialCode?: string;
+}) {
+  const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
+  const [applyToProject, setApplyToProject] = useState(false);
+  const [codeError, setCodeError] = useState("");
+  const [seeded, setSeeded] = useState(false);
+
+  const reset = () => {
+    setCode("");
+    setDescription("");
+    setApplyToProject(false);
+    setCodeError("");
+    setSeeded(false);
+  };
+
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      const raw = initialCode.trim();
+      setSeeded(raw.length > 0);
+      setCode(raw);
+    }
+    wasOpen.current = open;
+  }, [open, initialCode]);
+
+  useEffect(() => {
+    if (!open || initialCode.trim().length === 0) return;
+    const id = window.setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        'dialog[open] input[data-field="description"], [role="dialog"] input[data-field="description"]',
+      );
+      el?.focus();
+    }, 80);
+    return () => window.clearTimeout(id);
+  }, [open, initialCode]);
+
+  const canCreate = code.trim().length > 0 && description.trim().length > 0;
+
+  const phaseExists = (value: string) => {
+    const token = value.trim();
+    if (!token) return false;
+    return existingPhases.some(
+      (o) => o.token.toLowerCase() === token.toLowerCase(),
+    );
+  };
+
+  const validateCode = () => {
+    setCodeError(phaseExists(code) ? "Phase already exists" : "");
+  };
+
+  const handleCreate = () => {
+    const token = code.trim();
+    if (!token || !description.trim()) return;
+    if (phaseExists(token)) {
+      setCodeError("Phase already exists");
+      return;
+    }
+    onCreated({
+      id: `ph-${nextPhaseId(existingPhases)}`,
+      label: `${token} \u00b7 ${description.trim()}`,
+      group: "phase",
+      token,
+      extra: { description: description.trim(), onProject: applyToProject },
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      onCloseAnimationComplete={() => {
+        reset();
+        onClosed?.();
+      }}
+    >
+      {open && (
+        <>
+          <Dialog.Header>Create New Phase</Dialog.Header>
+          <Dialog.Content>
+            <Flex direction="column" gap="6" alignItems="stretch" style={{ width: "100%" }}>
+              <TextField
+                label="Phase"
+                placeholder={seeded ? "" : "e.g. Phase 9"}
+                value={code}
+                error={codeError || false}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCode(v);
+                  if (codeError)
+                    setCodeError(phaseExists(v) ? "Phase already exists" : "");
+                }}
+                onBlur={validateCode}
+                style={{ width: "100%" }}
+              />
+              <TextField
+                label="Description"
+                placeholder={seeded ? "" : "e.g. Closeout"}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                data-field="description"
+                style={{ width: "100%" }}
+              />
+              <Checkbox
+                label="Apply to this project only"
+                checked={applyToProject}
+                onChange={(e) => setApplyToProject(e.target.checked)}
+              />
+            </Flex>
+          </Dialog.Content>
+          <Dialog.Footer>
+            <Flex gap="3" justifyContent="flex-end">
+              <Dialog.CancelButton>Cancel</Dialog.CancelButton>
+              <Button
+                appearance="primary"
+                disabled={!canCreate}
+                onClick={handleCreate}
+              >
+                Create
+              </Button>
+            </Flex>
+          </Dialog.Footer>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
 // Row display per spec: primary bold token, subdued secondary.
 const primaryOf = (o: BudgetOption) => o.token;
 const secondaryOf = (o: BudgetOption) =>
@@ -207,20 +832,44 @@ const EMPTY_COMPOSITE: Composite = {
   phase: null,
 };
 
+// Resolve the configured ids against the option collection used by a picker.
+// Returning a new object avoids sharing one state object across picker instances.
+function createDefaultComposite(
+  itemsBySegment: Record<SegmentKey, BudgetOption[]> = ITEMS_BY_SEGMENT,
+): Composite {
+  return SEGMENT_ORDER.reduce<Composite>((composite, key) => {
+    const id = DEFAULT_SELECTION[key];
+    composite[key] =
+      itemsBySegment[key].find((item) => String(item.id) === id) ?? null;
+    return composite;
+  }, { ...EMPTY_COMPOSITE });
+}
+
 const SECTION_DIVIDER: CSSProperties = {
   borderTop: "1px solid var(--a2-border-color-subdued, #dfe0e1)",
   paddingTop: "var(--a2-size-4, 16px)",
 };
 
-function AssembledReadout({ value }: { value: string }) {
+function AssembledReadout({
+  value,
+  subtext,
+}: {
+  value: string;
+  subtext?: string;
+}) {
   return (
-    <Flex direction="column" gap="2" style={SECTION_DIVIDER}>
+    <Flex direction="column" gap="1" style={SECTION_DIVIDER}>
       <Text variant="eyebrow" size="small">
         Assembled budget code
       </Text>
       <Text variant="headline" size="small" el="h3">
         {value || "\u2014"}
       </Text>
+      {subtext && (
+        <Text variant="body" size="small" subdued>
+          {subtext}
+        </Text>
+      )}
     </Flex>
   );
 }
@@ -379,9 +1028,18 @@ function stripAria(props: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
-function segmentList(key: SegmentKey, text: string): BudgetOption[] {
+function segmentList(
+  key: SegmentKey,
+  text: string,
+  extras: BudgetOption[] = [],
+): BudgetOption[] {
   // Pinned (this-project) items first, then the rest; ordering holds while filtering.
-  const pinnedFirst = [...ITEMS_BY_SEGMENT[key]].sort(
+  // `extras` holds user-created items of any segment; include the ones for this key.
+  const source = [
+    ...ITEMS_BY_SEGMENT[key],
+    ...extras.filter((e) => e.group === key),
+  ];
+  const pinnedFirst = [...source].sort(
     (a, b) => Number(!!b.extra.onProject) - Number(!!a.extra.onProject),
   );
   const q = text.trim().toLowerCase();
@@ -395,17 +1053,19 @@ function PickerV1({
   size,
   fieldWidth,
   keys,
+  allowCreateNew,
 }: {
   size: FieldSize;
   fieldWidth: number;
   keys: SegmentKey[];
+  allowCreateNew: boolean;
 }) {
   // Only the first N segments are active (driven by the Field count control).
   // Shadows the module SEGMENT_ORDER so the rest of the component is unchanged.
   const SEGMENT_ORDER = keys;
   const RESTING = SEGMENT_ORDER.length; // `active` index meaning "done / resting"
 
-  const [committed, setCommitted] = useState<Composite>(EMPTY_COMPOSITE);
+  const [committed, setCommitted] = useState<Composite>(createDefaultComposite);
   const [active, setActive] = useState<number>(0); // 0..N-1 editing, N resting
   const [text, setText] = useState("");
   const [hi, setHi] = useState(0);
@@ -416,6 +1076,15 @@ function PickerV1({
   // True right after re-editing a committed segment: its token is in the input
   // (selected) but the menu should still show the full list, not filter to it.
   const [prefilled, setPrefilled] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createTypeOpen, setCreateTypeOpen] = useState(false);
+  const [createPhaseOpen, setCreatePhaseOpen] = useState(false);
+  const [createInitialCode, setCreateInitialCode] = useState("");
+  const [extraCodes, setExtraCodes] = useState<BudgetOption[]>([]);
+  const [extraTypes, setExtraTypes] = useState<BudgetOption[]>([]);
+  const [extraPhases, setExtraPhases] = useState<BudgetOption[]>([]);
+  const createSegmentRef = useRef(0);
+  const pendingCreatedRef = useRef<BudgetOption | null>(null);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -442,15 +1111,28 @@ function PickerV1({
   const list = useMemo(
     // While prefilled (token selected on re-edit), show the full list so the
     // user can pick a different value; typing clears the flag and filters.
-    () => (activeKey ? segmentList(activeKey, prefilled ? "" : text) : []),
-    [activeKey, text, prefilled],
+    () =>
+      activeKey
+        ? segmentList(activeKey, prefilled ? "" : text, [
+            ...extraCodes,
+            ...extraTypes,
+            ...extraPhases,
+          ])
+        : [],
+    [activeKey, text, prefilled, extraCodes, extraTypes, extraPhases],
   );
   const open = menuOpen && active < RESTING;
 
   // Keep the active input focused while editing, and select any prefilled text
   // (re-editing a committed segment) so typing replaces it — the "select all"
   // highlight, in place of a chip. No-op when advancing to an empty segment.
+  // Skip the initial mount so the card doesn't grab focus / open on page load.
+  const didAutoFocusRef = useRef(false);
   useEffect(() => {
+    if (!didAutoFocusRef.current) {
+      didAutoFocusRef.current = true;
+      return;
+    }
     if (active < RESTING) {
       const el = inputRef.current;
       el?.focus();
@@ -485,7 +1167,11 @@ function PickerV1({
     setText(item?.token ?? "");
     setPrefilled(!!item);
     // Highlight the current value's row in the full list so Enter keeps it.
-    const full = segmentList(key, "");
+    const full = segmentList(key, "", [
+      ...extraCodes,
+      ...extraTypes,
+      ...extraPhases,
+    ]);
     const idx = item ? full.findIndex((o) => o.id === item.id) : 0;
     setHi(idx >= 0 ? idx : 0);
     setMenuOpen(true);
@@ -731,6 +1417,10 @@ function PickerV1({
   const assembled = allCommitted
     ? SEGMENT_ORDER.map((k) => committed[k]!.token).join(V1_SEP)
     : "";
+  // Human-readable form: each segment's description instead of its token.
+  const assembledReadable = allCommitted
+    ? SEGMENT_ORDER.map((k) => secondaryOf(committed[k]!)).join(V1_SEP)
+    : "";
 
   const menu = activeKey
     ? (() => {
@@ -779,6 +1469,7 @@ function PickerV1({
 
         return (
           <div className="bcv1-menu" style={{ width: shellWidth }}>
+            <div className="bcv1-body">
             <div
               className="bcv1-list"
               role="listbox"
@@ -806,35 +1497,89 @@ function PickerV1({
                   )}
                 </div>
               )}
+              {list.length === 0 && (
+                <div className="bcv1-empty" role="presentation">
+                  No match found
+                </div>
+              )}
             </div>
-            <div className="bcv1-footer">
-              <Button
-                appearance="secondary"
-                size="small"
-                icon={{ before: AddIcon }}
-                // Anvil's AddNewItemButton sets width:100% inline (beats the button's
-                // own fit-content width); mirror that here.
-                style={{ width: "100%" }}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  /* stub: wire to real create-new-code flow */
-                }}
-              >
-                Create new {label.toLowerCase()}
-              </Button>
             </div>
+            {allowCreateNew && (
+              <div className="bcv1-footer">
+                <Button
+                  appearance="secondary"
+                  size="small"
+                  icon={{ before: AddIcon }}
+                  // Anvil's AddNewItemButton sets width:100% inline (beats the button's
+                  // own fit-content width); mirror that here.
+                  style={{ width: "100%" }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (!activeKey) return;
+                    createSegmentRef.current = active;
+                    const typed = text.trim();
+                    const existing =
+                      activeKey === "cost-code"
+                        ? [...COST_CODES, ...extraCodes]
+                        : activeKey === "cost-type"
+                          ? [...COST_TYPES, ...extraTypes]
+                          : [...PHASES, ...extraPhases];
+                    // Only carry the string into the dialog if it's genuinely new —
+                    // not an already-selected value being re-edited (prefilled),
+                    // nor an existing item.
+                    const isNew =
+                      typed !== "" &&
+                      !prefilled &&
+                      !existing.some(
+                        (o) => o.token.toLowerCase() === typed.toLowerCase(),
+                      );
+                    setCreateInitialCode(isNew ? typed : "");
+                    setMenuOpen(false);
+                    if (activeKey === "cost-code") setCreateOpen(true);
+                    else if (activeKey === "cost-type") setCreateTypeOpen(true);
+                    else setCreatePhaseOpen(true);
+                  }}
+                >
+                  Create new {label.toLowerCase()}
+                </Button>
+              </div>
+            )}
           </div>
         );
       })()
     : null;
 
   return (
-    <Card padding="large" style={{ width: "100%", height: "100%" }}>
+    <>
+    <Card
+      padding="large"
+      style={{
+        width: "100%",
+        height: "100%",
+        // Red ring marking v1 as a rejected direction.
+        outline: "2px solid var(--a2-foreground-color-critical, #d92d20)",
+        outlineOffset: "0px",
+      }}
+    >
       <Flex direction="column" gap="4">
         <Flex direction="column" gap="1">
-          <Text variant="eyebrow" size="small">
-            v1 · One field, type-ahead segments
-          </Text>
+          <Flex justifyContent="space-between" alignItems="center" gap="2">
+            <Text variant="eyebrow" size="small">
+              v1 · One field, type-ahead segments
+            </Text>
+            <button
+              type="button"
+              className="bcv2-pick"
+              aria-label="Rejected direction"
+              title="Rejected direction"
+            >
+              <Icon
+                svg={CloseIcon}
+                size="small"
+                color="var(--a2-foreground-color-critical, #d92d20)"
+              />
+            </button>
+          </Flex>
           <Text variant="body" size="small" subdued>
             Type to search each segment; press Enter, Tab, →, or "." to confirm
             and advance. Click a code to re-edit it; ← / → move between segments;
@@ -919,7 +1664,7 @@ function PickerV1({
           {live}
         </div>
 
-        <AssembledReadout value={assembled} />
+        <AssembledReadout value={assembled} subtext={assembledReadable} />
 
         <EvalSection title="Pros">
           <li>
@@ -946,6 +1691,12 @@ function PickerV1({
         </EvalSection>
 
         <EvalSection title="Cons">
+          <li>
+            <strong>Superseded by v2.</strong> v2 keeps this exact fused look but
+            gets per-segment focus, Tab order, and labeling from real inputs — the
+            same UX with far less bespoke a11y to own. That's why this single-input
+            build wasn't the pick.
+          </li>
           <li>
             <strong>Actually the least conservative option.</strong> Anvil ships
             no segmented primitive, so the shell, menu, keyboard model, and a11y
@@ -1025,6 +1776,12 @@ function PickerV1({
               selection — all hand-styled, diverging from Anvil's option states.
             </li>
             <li>
+              <strong>"Create new" footer (optional):</strong> a toggle-gated{" "}
+              <code>Button</code> below the list opens a dialog to add a code
+              inline — hand-wired here, versus v0's stock{" "}
+              <code>onAddNewItem</code>.
+            </li>
+            <li>
               <strong>Reused unchanged:</strong> <code>Popover</code>,{" "}
               <code>Icon</code>, <code>Button</code>, <code>FieldLabel</code>, and{" "}
               <code>--a2-</code> tokens throughout (with a{" "}
@@ -1034,6 +1791,119 @@ function PickerV1({
         </Customizations>
       </Flex>
     </Card>
+    <CreateCostCodeDialog
+      open={createOpen}
+      onClose={() => setCreateOpen(false)}
+      initialCode={createInitialCode}
+      existingCodes={[...COST_CODES, ...extraCodes]}
+      onCreated={(option) => {
+        setExtraCodes((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+      }}
+      onClosed={() => {
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) {
+          rest(); // cancelled — discard the value kept underneath
+          return;
+        }
+        commitAndAdvance(option);
+        // Re-assert focus after the Dialog restores focus to its trigger, so
+        // the segment advances (or the rightmost lands highlighted, no menu).
+        const i = createSegmentRef.current;
+        const na = i + 1;
+        // Deterministic: run after Anvil's rAF-based focus restore (DrillDown
+        // restoreFocus) via a double-rAF — no magic timeout.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (na < RESTING) {
+              editSegment(na);
+              inputRef.current?.focus();
+            } else {
+              editSegment(i);
+              inputRef.current?.focus();
+              inputRef.current?.select();
+              setMenuOpen(false);
+            }
+          }),
+        );
+      }}
+    />
+    <CreateCostTypeDialog
+      open={createTypeOpen}
+      onClose={() => setCreateTypeOpen(false)}
+      initialCode={createInitialCode}
+      existingTypes={[...COST_TYPES, ...extraTypes]}
+      onCreated={(option) => {
+        setExtraTypes((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+      }}
+      onClosed={() => {
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) {
+          rest(); // cancelled — discard the value kept underneath
+          return;
+        }
+        commitAndAdvance(option);
+        // Re-assert focus after the Dialog restores focus to its trigger, so
+        // the segment advances (or the rightmost lands highlighted, no menu).
+        const i = createSegmentRef.current;
+        const na = i + 1;
+        // Deterministic: run after Anvil's rAF-based focus restore (DrillDown
+        // restoreFocus) via a double-rAF — no magic timeout.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (na < RESTING) {
+              editSegment(na);
+              inputRef.current?.focus();
+            } else {
+              editSegment(i);
+              inputRef.current?.focus();
+              inputRef.current?.select();
+              setMenuOpen(false);
+            }
+          }),
+        );
+      }}
+    />
+    <CreatePhaseDialog
+      open={createPhaseOpen}
+      onClose={() => setCreatePhaseOpen(false)}
+      initialCode={createInitialCode}
+      existingPhases={[...PHASES, ...extraPhases]}
+      onCreated={(option) => {
+        setExtraPhases((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+      }}
+      onClosed={() => {
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) {
+          rest(); // cancelled — discard the value kept underneath
+          return;
+        }
+        commitAndAdvance(option);
+        const i = createSegmentRef.current;
+        const na = i + 1;
+        // Deterministic: run after Anvil's rAF-based focus restore (DrillDown
+        // restoreFocus) via a double-rAF — no magic timeout.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (na < RESTING) {
+              editSegment(na);
+              inputRef.current?.focus();
+            } else {
+              editSegment(i);
+              inputRef.current?.focus();
+              inputRef.current?.select();
+              setMenuOpen(false);
+            }
+          }),
+        );
+      }}
+    />
+    </>
   );
 }
 
@@ -1047,15 +1917,17 @@ function PickerV2({
   size,
   fieldWidth,
   keys,
+  allowCreateNew,
 }: {
   size: FieldSize;
   fieldWidth: number;
   keys: SegmentKey[];
+  allowCreateNew: boolean;
 }) {
   // Only the first N segments render (driven by the Field count control).
   const SEGMENT_ORDER = keys;
 
-  const [committed, setCommitted] = useState<Composite>(EMPTY_COMPOSITE);
+  const [committed, setCommitted] = useState<Composite>(createDefaultComposite);
   // Which segment currently has focus (0..N-1), or -1 when the field is at rest.
   // Derived from real DOM focus events — not a hijacked counter.
   const [activeIndex, setActiveIndex] = useState<number>(-1);
@@ -1067,11 +1939,27 @@ function PickerV2({
   // True right after focusing a committed segment: its token is prefilled +
   // selected, but the menu still shows the full list (not filtered to it).
   const [prefilled, setPrefilled] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createTypeOpen, setCreateTypeOpen] = useState(false);
+  const [createPhaseOpen, setCreatePhaseOpen] = useState(false);
+  const [createInitialCode, setCreateInitialCode] = useState("");
+  const [extraCodes, setExtraCodes] = useState<BudgetOption[]>([]);
+  const [extraTypes, setExtraTypes] = useState<BudgetOption[]>([]);
+  const [extraPhases, setExtraPhases] = useState<BudgetOption[]>([]);
+  const createSegmentRef = useRef(0);
+  const pendingCreatedRef = useRef<BudgetOption | null>(null);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   // One ref per segment input — the heart of the separate-input model.
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const blurTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Set true right after creating into the LAST segment. Anvil's Dialog restores
+  // focus into that segment on close; onSegFocus consumes this flag to bounce the
+  // field straight to rest (no menu, no caret, no "selected blue" flash).
+  const restAfterCreateRef = useRef(false);
+  // True while a Create dialog is open: keep the typed value in the segment
+  // (visible underneath) instead of clearing it on blur; discarded on cancel.
+  const createDialogActiveRef = useRef(false);
 
   useEffect(() => () => clearTimeout(blurTimer.current), []);
 
@@ -1082,8 +1970,15 @@ function PickerV2({
 
   const activeKey = activeIndex >= 0 ? SEGMENT_ORDER[activeIndex] : null;
   const list = useMemo(
-    () => (activeKey ? segmentList(activeKey, prefilled ? "" : text) : []),
-    [activeKey, text, prefilled],
+    () =>
+      activeKey
+        ? segmentList(activeKey, prefilled ? "" : text, [
+            ...extraCodes,
+            ...extraTypes,
+            ...extraPhases,
+          ])
+        : [],
+    [activeKey, text, prefilled, extraCodes, extraTypes, extraPhases],
   );
   const open = menuOpen && activeIndex >= 0;
 
@@ -1125,12 +2020,35 @@ function PickerV2({
 
   // Genuine focus handler: real focus (Tab, click, or programmatic) drives state.
   const onSegFocus = (i: number) => {
+    // Just created into the last segment → Anvil restores focus here on close.
+    // Bounce it straight to rest: close the menu now and blur back out, so there's
+    // no open menu, no caret, and no text-selection "blue" moment.
+    if (restAfterCreateRef.current) {
+      restAfterCreateRef.current = false;
+      setMenuOpen(false);
+      const el = inputRefs.current[i];
+      if (el) {
+        // Collapse any auto-selection and drop focus SYNCHRONOUSLY (not in a rAF)
+        // so the focused "selected blue" state never gets a frame to paint.
+        try {
+          el.setSelectionRange(el.value.length, el.value.length);
+        } catch {
+          /* non-text input */
+        }
+        el.blur();
+      }
+      return;
+    }
     const key = SEGMENT_ORDER[i];
     const item = committed[key];
     setActiveIndex(i);
     setText(item?.token ?? "");
     setPrefilled(!!item);
-    const full = segmentList(key, "");
+    const full = segmentList(key, "", [
+      ...extraCodes,
+      ...extraTypes,
+      ...extraPhases,
+    ]);
     const idx = item ? full.findIndex((o) => o.id === item.id) : 0;
     setHi(idx >= 0 ? idx : 0);
     setMenuOpen(true);
@@ -1145,6 +2063,10 @@ function PickerV2({
       const stillInSegment = inputRefs.current.some((el) => el && el === ae);
       if (!stillInSegment) {
         setMenuOpen(false);
+        // Focus truly left the field — clear the one-shot rest flag as a safety net.
+        restAfterCreateRef.current = false;
+        // A Create dialog took focus: keep the typed value visible underneath.
+        if (createDialogActiveRef.current) return;
         setActiveIndex(-1);
         setText("");
         setPrefilled(false);
@@ -1164,6 +2086,14 @@ function PickerV2({
           ? `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`
           : `${SEGMENTS[key].label} set to ${item.token}`,
       );
+      // Drop to rest immediately (like v1's rest()): close the menu and clear the
+      // active/selected state synchronously, so there's no ~120ms window where the
+      // menu lingers and the token shows the "selected blue" state while the blur
+      // debounce settles.
+      setMenuOpen(false);
+      setActiveIndex(-1);
+      setText("");
+      setPrefilled(false);
       inputRefs.current[i]?.blur(); // done → rest
     } else {
       setLive(`${SEGMENTS[key].label} set to ${item.token}`);
@@ -1172,6 +2102,27 @@ function PickerV2({
   };
 
   const advanceKeep = (i: number) => focusSegment(i + 1);
+
+  // Write a value into a segment WITHOUT moving focus. Called the instant an item
+  // is created (before the dialog closes) so the value shows immediately as the
+  // scrim fades — focus is advanced separately in onClosed, after the close.
+  const commitValue = (item: BudgetOption, i: number) => {
+    const key = SEGMENT_ORDER[i];
+    const next = { ...committed, [key]: item };
+    setCommitted(next);
+    // The segment is still "active" while the dialog closes, so its input shows
+    // the live query (empty if the value was typed in the dialog). Sync the live
+    // text to the new token now so the field shows it immediately — otherwise it
+    // lags the bold readout (which reads committed) until blur switches display.
+    setText(item.token);
+    setPrefilled(true);
+    const allSet = SEGMENT_ORDER.every((k) => next[k]);
+    setLive(
+      allSet
+        ? `Budget code complete: ${SEGMENT_ORDER.map((k) => next[k]!.token).join(V1_SEP)}`
+        : `${SEGMENTS[key].label} set to ${item.token}`,
+    );
+  };
 
   const clearSegment = (i: number) => {
     setCommitted((prev) => ({ ...prev, [SEGMENT_ORDER[i]]: null }));
@@ -1345,6 +2296,10 @@ function PickerV2({
   const assembled = allCommitted
     ? SEGMENT_ORDER.map((k) => committed[k]!.token).join(V1_SEP)
     : "";
+  // Human-readable form: each segment's description instead of its token.
+  const assembledReadable = allCommitted
+    ? SEGMENT_ORDER.map((k) => secondaryOf(committed[k]!)).join(V1_SEP)
+    : "";
 
   const menu = activeKey
     ? (() => {
@@ -1392,6 +2347,7 @@ function PickerV2({
 
         return (
           <div className="bcv1-menu" style={{ width: shellWidth }}>
+            <div className="bcv1-body">
             <div
               className="bcv1-list"
               role="listbox"
@@ -1419,28 +2375,69 @@ function PickerV2({
                   )}
                 </div>
               )}
+              {list.length === 0 && (
+                <div className="bcv1-empty" role="presentation">
+                  No match found
+                </div>
+              )}
             </div>
-            <div className="bcv1-footer">
-              <Button
-                appearance="secondary"
-                size="small"
-                icon={{ before: AddIcon }}
-                style={{ width: "100%" }}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  /* stub: wire to real create-new-code flow */
-                }}
-              >
-                Create new {label.toLowerCase()}
-              </Button>
             </div>
+            {allowCreateNew && (
+              <div className="bcv1-footer">
+                <Button
+                  appearance="secondary"
+                  size="small"
+                  icon={{ before: AddIcon }}
+                  style={{ width: "100%" }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (!activeKey) return;
+                    createDialogActiveRef.current = true;
+                    createSegmentRef.current = activeIndex;
+                    const typed = text.trim();
+                    const existing =
+                      activeKey === "cost-code"
+                        ? [...COST_CODES, ...extraCodes]
+                        : activeKey === "cost-type"
+                          ? [...COST_TYPES, ...extraTypes]
+                          : [...PHASES, ...extraPhases];
+                    // Only carry the string into the dialog if it's genuinely new —
+                    // not an already-selected value being re-edited (prefilled),
+                    // nor an existing item.
+                    const isNew =
+                      typed !== "" &&
+                      !prefilled &&
+                      !existing.some(
+                        (o) => o.token.toLowerCase() === typed.toLowerCase(),
+                      );
+                    setCreateInitialCode(isNew ? typed : "");
+                    setMenuOpen(false);
+                    if (activeKey === "cost-code") setCreateOpen(true);
+                    else if (activeKey === "cost-type") setCreateTypeOpen(true);
+                    else setCreatePhaseOpen(true);
+                  }}
+                >
+                  Create new {label.toLowerCase()}
+                </Button>
+              </div>
+            )}
           </div>
         );
       })()
     : null;
 
   return (
-    <Card padding="large" style={{ width: "100%", height: "100%" }}>
+    <>
+    <Card
+      padding="large"
+      style={{
+        width: "100%",
+        height: "100%",
+        // Green ring reinforcing v2 as the chosen direction.
+        outline: "2px solid var(--a2-foreground-color-success, #1a8245)",
+        outlineOffset: "0px",
+      }}
+    >
       <Flex direction="column" gap="4">
         <Flex direction="column" gap="1">
           <Flex justifyContent="space-between" alignItems="center" gap="2">
@@ -1537,7 +2534,7 @@ function PickerV2({
           {live}
         </div>
 
-        <AssembledReadout value={assembled} />
+        <AssembledReadout value={assembled} subtext={assembledReadable} />
 
         <EvalSection title="Pros">
           <li>
@@ -1588,9 +2585,10 @@ function PickerV2({
         <Customizations
           lead={
             <>
-              The safer take on the combined field: keep v1's visuals, but build
-              on genuinely separate inputs so focus, Tab order, and per-segment
-              labeling come from the platform rather than a custom state machine.
+              The chosen direction. The safer take on the combined field: keep
+              v1's visuals, but build on genuinely separate inputs so focus, Tab
+              order, and per-segment labeling come from the platform rather than a
+              custom state machine.
             </>
           }
         >
@@ -1617,6 +2615,13 @@ function PickerV2({
             the whole code; Backspace on an empty segment clears or steps back.
           </li>
           <li>
+            <strong>Optional "Create new".</strong> A toggle-gated footer opens a
+            dialog to add a cost code / type / phase inline; it prefills from what
+            you typed, drops the new value into the segment, then advances focus —
+            or drops the field to rest cleanly when it was the last segment (no
+            lingering menu or selected-blue flash).
+          </li>
+          <li>
             <strong>Reused unchanged:</strong> <code>Popover</code>,{" "}
             <code>Icon</code>, <code>Button</code>, <code>FieldLabel</code>, the
             shared <code>bcv1-*</code> styles, and <code>--a2-</code> tokens.
@@ -1624,6 +2629,159 @@ function PickerV2({
         </Customizations>
       </Flex>
     </Card>
+    <CreateCostCodeDialog
+      open={createOpen}
+      onClose={() => setCreateOpen(false)}
+      initialCode={createInitialCode}
+      existingCodes={[...COST_CODES, ...extraCodes]}
+      onCreated={(option) => {
+        setExtraCodes((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+        const seg =
+          createSegmentRef.current >= 0 ? createSegmentRef.current : 0;
+        commitValue(option, seg);
+        // Created into the LAST segment: mark it now (before the dialog closes)
+        // so the focus-restore bounces straight to rest in onSegFocus — the
+        // restore can fire before onClosed, so setting it there is too late.
+        if (seg + 1 >= SEGMENT_ORDER.length) restAfterCreateRef.current = true;
+      }}
+      onClosed={() => {
+        createDialogActiveRef.current = false;
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) {
+          // Cancelled — discard the value that was kept underneath.
+          setActiveIndex(-1);
+          setText("");
+          setPrefilled(false);
+          setMenuOpen(false);
+          return;
+        }
+        // Value was already written on create (commitValue in onCreated) so it
+        // shows instantly; here we only need to place focus after the close.
+        const i = createSegmentRef.current >= 0 ? createSegmentRef.current : 0;
+        // The Dialog restores focus to its trigger on close, which lands back on
+        // the segment we came from — so re-assert focus afterwards.
+        const na = i + 1;
+        // Anvil restores focus to the trigger inside a rAF (DrillDown
+        // restoreFocus) that runs after this onCloseAnimationComplete, so a
+        // double-rAF is required to land after it (a single rAF loses the race).
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (na < SEGMENT_ORDER.length) {
+              focusSegment(na); // move on to the next adjacent segment
+            } else {
+              // Last segment: defensive fallback. The restore normally routes
+              // through onSegFocus, which bounces to rest (no menu, no caret, no
+              // "selected blue"); blur here too in case it doesn't.
+              inputRefs.current[i]?.blur();
+              setMenuOpen(false);
+            }
+          }),
+        );
+      }}
+    />
+    <CreateCostTypeDialog
+      open={createTypeOpen}
+      onClose={() => setCreateTypeOpen(false)}
+      initialCode={createInitialCode}
+      existingTypes={[...COST_TYPES, ...extraTypes]}
+      onCreated={(option) => {
+        setExtraTypes((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+        const seg =
+          createSegmentRef.current >= 0 ? createSegmentRef.current : 0;
+        commitValue(option, seg);
+        // Created into the LAST segment: mark it now (before the dialog closes)
+        // so the focus-restore bounces straight to rest in onSegFocus — the
+        // restore can fire before onClosed, so setting it there is too late.
+        if (seg + 1 >= SEGMENT_ORDER.length) restAfterCreateRef.current = true;
+      }}
+      onClosed={() => {
+        createDialogActiveRef.current = false;
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) {
+          // Cancelled — discard the value that was kept underneath.
+          setActiveIndex(-1);
+          setText("");
+          setPrefilled(false);
+          setMenuOpen(false);
+          return;
+        }
+        // Value was already written on create (commitValue in onCreated) so it
+        // shows instantly; here we only need to place focus after the close.
+        const i = createSegmentRef.current >= 0 ? createSegmentRef.current : 0;
+        // The Dialog restores focus to its trigger on close, which lands back on
+        // the segment we came from — so re-assert focus afterwards.
+        const na = i + 1;
+        // Anvil restores focus to the trigger inside a rAF (DrillDown
+        // restoreFocus) that runs after this onCloseAnimationComplete, so a
+        // double-rAF is required to land after it (a single rAF loses the race).
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (na < SEGMENT_ORDER.length) {
+              focusSegment(na); // move on to the next adjacent segment
+            } else {
+              // Last segment: defensive fallback. The restore normally routes
+              // through onSegFocus, which bounces to rest (no menu, no caret, no
+              // "selected blue"); blur here too in case it doesn't.
+              inputRefs.current[i]?.blur();
+              setMenuOpen(false);
+            }
+          }),
+        );
+      }}
+    />
+    <CreatePhaseDialog
+      open={createPhaseOpen}
+      onClose={() => setCreatePhaseOpen(false)}
+      initialCode={createInitialCode}
+      existingPhases={[...PHASES, ...extraPhases]}
+      onCreated={(option) => {
+        setExtraPhases((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+        const seg =
+          createSegmentRef.current >= 0 ? createSegmentRef.current : 0;
+        commitValue(option, seg);
+        // Created into the LAST segment: mark it now (before the dialog closes)
+        // so the focus-restore bounces straight to rest in onSegFocus — the
+        // restore can fire before onClosed, so setting it there is too late.
+        if (seg + 1 >= SEGMENT_ORDER.length) restAfterCreateRef.current = true;
+      }}
+      onClosed={() => {
+        createDialogActiveRef.current = false;
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) {
+          // Cancelled — discard the value that was kept underneath.
+          setActiveIndex(-1);
+          setText("");
+          setPrefilled(false);
+          setMenuOpen(false);
+          return;
+        }
+        // Value was already written on create (commitValue in onCreated) so it
+        // shows instantly; here we only need to place focus after the close.
+        const i = createSegmentRef.current >= 0 ? createSegmentRef.current : 0;
+        const na = i + 1;
+        // Double rAF: must land after Anvil's rAF-based focus restore (see above).
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (na < SEGMENT_ORDER.length) {
+              focusSegment(na);
+            } else {
+              // Last segment: defensive fallback. The restore normally routes
+              // through onSegFocus, which bounces to rest (no menu, no caret, no
+              // "selected blue"); blur here too in case it doesn't.
+              inputRefs.current[i]?.blur();
+              setMenuOpen(false);
+            }
+          }),
+        );
+      }}
+    />
+    </>
   );
 }
 
@@ -1639,16 +2797,29 @@ function PickerV0({
   size,
   fieldWidth,
   keys,
+  allowCreateNew,
 }: {
   size: FieldSize;
   fieldWidth: number;
   keys: SegmentKey[];
+  allowCreateNew: boolean;
 }) {
   // Only the first N segments render (driven by the Field count control);
   // shadows the module SEGMENT_ORDER so the rest of the component is unchanged.
   const SEGMENT_ORDER = keys;
 
-  const [composite, setComposite] = useState<Composite>(EMPTY_COMPOSITE);
+  const [composite, setComposite] = useState<Composite>(() =>
+    createDefaultComposite(V0_ITEMS_BY_SEGMENT),
+  );
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createTypeOpen, setCreateTypeOpen] = useState(false);
+  const [createPhaseOpen, setCreatePhaseOpen] = useState(false);
+  const [createInitialCode, setCreateInitialCode] = useState("");
+  const [extraCodes, setExtraCodes] = useState<BudgetOption[]>([]);
+  const [extraTypes, setExtraTypes] = useState<BudgetOption[]>([]);
+  const [extraPhases, setExtraPhases] = useState<BudgetOption[]>([]);
+  const createIndexRef = useRef(0);
+  const pendingCreatedRef = useRef<BudgetOption | null>(null);
   const fieldsRef = useRef<HTMLDivElement>(null);
   const labelId = `${useId()}-label`;
 
@@ -1800,14 +2971,41 @@ function PickerV0({
   const v0Assembled = SEGMENT_ORDER.every((key) => composite[key])
     ? SEGMENT_ORDER.map((key) => composite[key]!.token).join(V1_SEP)
     : "";
+  const v0AssembledReadable = SEGMENT_ORDER.every((key) => composite[key])
+    ? SEGMENT_ORDER.map((key) => secondaryOf(composite[key]!)).join(V1_SEP)
+    : "";
 
   return (
-    <Card padding="large" style={{ width: "100%", height: "100%" }}>
+    <>
+    <Card
+      padding="large"
+      style={{
+        width: "100%",
+        height: "100%",
+        // Red ring marking v0 as a rejected direction.
+        outline: "2px solid var(--a2-foreground-color-critical, #d92d20)",
+        outlineOffset: "0px",
+      }}
+    >
       <Flex direction="column" gap="4">
         <Flex direction="column" gap="1">
-          <Text variant="eyebrow" size="small">
-            v0 · SelectFields, one label
-          </Text>
+          <Flex justifyContent="space-between" alignItems="center" gap="2">
+            <Text variant="eyebrow" size="small">
+              v0 · SelectFields, one label
+            </Text>
+            <button
+              type="button"
+              className="bcv2-pick"
+              aria-label="Rejected direction"
+              title="Rejected direction"
+            >
+              <Icon
+                svg={CloseIcon}
+                size="small"
+                color="var(--a2-foreground-color-critical, #d92d20)"
+              />
+            </button>
+          </Flex>
           <Text variant="body" size="small" subdued>
             One "Budget Code" label; N Anvil <code>SelectField</code>s (set by the
             Field count control) separated by periods, each showing only the code
@@ -1839,7 +3037,20 @@ function PickerV0({
             }}
           >
             {SEGMENT_ORDER.map((key, i) => {
-              const projectItems = v0ProjectItemsFor(key);
+              const extraV0 =
+                key === "cost-code"
+                  ? extraCodes.map(toV0Option)
+                  : key === "cost-type"
+                    ? extraTypes.map(toV0Option)
+                    : extraPhases.map(toV0Option);
+              const projectItems = [
+                ...v0ProjectItemsFor(key),
+                ...extraV0.filter((o) => o.extra.onProject),
+              ];
+              const moreItems = [
+                ...v0MoreItemsFor(key),
+                ...extraV0.filter((o) => !o.extra.onProject),
+              ];
               const plural = `${SEGMENTS[key].label}s`;
               return (
                 <Fragment key={key}>
@@ -1872,7 +3083,7 @@ function PickerV0({
                       // "This project" items are pinned under their own section
                       // label; the rest sit under a "More …" group header (no
                       // per-row chip).
-                      options={v0MoreItemsFor(key)}
+                      options={moreItems}
                       groupToString={() => `More ${plural}`}
                       pinned={
                         projectItems.length > 0
@@ -1891,11 +3102,34 @@ function PickerV0({
                       }
                       value={composite[key]}
                       onSelectedOptionChange={(option) => selectAndAdvance(i, option)}
-                      // Stock Anvil "add new item" footer button (like v1).
-                      addItemLabel={`Create new ${SEGMENTS[key].label.toLowerCase()}`}
-                      onAddNewItem={() => {
-                        /* stub: wire to real create-new-code flow */
-                      }}
+                      // Stock Anvil "add new item" footer button (like v1),
+                      // gated by the Create-new harness toggle.
+                      {...(allowCreateNew
+                        ? {
+                            addItemLabel: `Create new ${SEGMENTS[key].label.toLowerCase()}`,
+                            onAddNewItem: () => {
+                              createIndexRef.current = i;
+                              const typed = (lastTypedRef.current[i] ?? "").trim();
+                              const existing =
+                                key === "cost-code"
+                                  ? [...COST_CODES, ...extraCodes]
+                                  : key === "cost-type"
+                                    ? [...COST_TYPES, ...extraTypes]
+                                    : [...PHASES, ...extraPhases];
+                              // Seed only a genuinely new string (not an existing item).
+                              const isNew =
+                                typed !== "" &&
+                                !existing.some(
+                                  (o) =>
+                                    o.token.toLowerCase() === typed.toLowerCase(),
+                                );
+                              setCreateInitialCode(isNew ? typed : "");
+                              if (key === "cost-code") setCreateOpen(true);
+                              else if (key === "cost-type") setCreateTypeOpen(true);
+                              else setCreatePhaseOpen(true);
+                            },
+                          }
+                        : {})}
                     />
                   </div>
                 </Fragment>
@@ -1904,7 +3138,7 @@ function PickerV0({
           </div>
         </Flex>
 
-        <AssembledReadout value={v0Assembled} />
+        <AssembledReadout value={v0Assembled} subtext={v0AssembledReadable} />
 
         <EvalSection title="Pros">
           <li>
@@ -1951,6 +3185,13 @@ function PickerV0({
             <strong>Behaviors bolted on.</strong> Highlight-on-open, Tab-accept,
             "."-advance, clear-on-empty, and select-all-on-focus live outside Anvil
             in extra listeners.
+          </li>
+          <li>
+            <strong>Superseded by v2.</strong> The combined field reads as one
+            identifier and stays compact in dense tables; N separate stock fields
+            lost on footprint and cross-segment consistency despite the lighter
+            overrides. (Its one edge — "Create new" for free via{" "}
+            <code>onAddNewItem</code> — v2 reproduces with a small custom footer.)
           </li>
         </EvalSection>
 
@@ -2022,6 +3263,110 @@ function PickerV0({
         </Customizations>
       </Flex>
     </Card>
+    <CreateCostCodeDialog
+      open={createOpen}
+      onClose={() => setCreateOpen(false)}
+      initialCode={createInitialCode}
+      existingCodes={[...COST_CODES, ...extraCodes]}
+      onCreated={(option) => {
+        setExtraCodes((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+      }}
+      onClosed={() => {
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) return;
+        const idx = createIndexRef.current;
+        selectAndAdvance(idx, toV0Option(option));
+        // Deterministic: run after Anvil's rAF-based focus restore (DrillDown
+        // restoreFocus) via a double-rAF — no magic timeout.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const inputs =
+              fieldsRef.current?.querySelectorAll<HTMLInputElement>(
+                ".bcv0-field input",
+              );
+            if (idx < SEGMENT_ORDER.length - 1) {
+              const next = inputs?.[idx + 1];
+              next?.focus();
+              next?.click(); // open the next field's menu
+            } else {
+              // Rightmost field: focus it (highlighted), no menu.
+              inputs?.[idx]?.focus();
+            }
+          }),
+        );
+      }}
+    />
+    <CreateCostTypeDialog
+      open={createTypeOpen}
+      onClose={() => setCreateTypeOpen(false)}
+      initialCode={createInitialCode}
+      existingTypes={[...COST_TYPES, ...extraTypes]}
+      onCreated={(option) => {
+        setExtraTypes((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+      }}
+      onClosed={() => {
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) return;
+        const idx = createIndexRef.current;
+        selectAndAdvance(idx, toV0Option(option));
+        // Deterministic: run after Anvil's rAF-based focus restore (DrillDown
+        // restoreFocus) via a double-rAF — no magic timeout.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const inputs =
+              fieldsRef.current?.querySelectorAll<HTMLInputElement>(
+                ".bcv0-field input",
+              );
+            if (idx < SEGMENT_ORDER.length - 1) {
+              const next = inputs?.[idx + 1];
+              next?.focus();
+              next?.click(); // open the next field's menu
+            } else {
+              // Rightmost field: focus it (highlighted), no menu.
+              inputs?.[idx]?.focus();
+            }
+          }),
+        );
+      }}
+    />
+    <CreatePhaseDialog
+      open={createPhaseOpen}
+      onClose={() => setCreatePhaseOpen(false)}
+      initialCode={createInitialCode}
+      existingPhases={[...PHASES, ...extraPhases]}
+      onCreated={(option) => {
+        setExtraPhases((prev) => [...prev, option]);
+        pendingCreatedRef.current = option;
+      }}
+      onClosed={() => {
+        const option = pendingCreatedRef.current;
+        pendingCreatedRef.current = null;
+        if (!option) return;
+        const idx = createIndexRef.current;
+        selectAndAdvance(idx, toV0Option(option));
+        // Deterministic: run after Anvil's rAF-based focus restore (DrillDown).
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const inputs =
+              fieldsRef.current?.querySelectorAll<HTMLInputElement>(
+                ".bcv0-field input",
+              );
+            if (idx < SEGMENT_ORDER.length - 1) {
+              const next = inputs?.[idx + 1];
+              next?.focus();
+              next?.click();
+            } else {
+              inputs?.[idx]?.focus();
+            }
+          }),
+        );
+      }}
+    />
+    </>
   );
 }
 
@@ -2041,6 +3386,9 @@ export default function BudgetCodePicker() {
   const [fieldWidth, setFieldWidth] = useState(FIELD_WIDTH_DEFAULT);
   // How many segments the picker exposes (production budget codes are N-segment).
   const [fieldCount, setFieldCount] = useState(2);
+  // Whether the inline "Create new <segment>" affordance is offered. Off by
+  // default (system segments usually can't be created ad-hoc).
+  const [allowCreateNew, setAllowCreateNew] = useState(false);
   const keys = SEGMENT_ORDER.slice(0, fieldCount);
 
   return (
@@ -2054,7 +3402,12 @@ export default function BudgetCodePicker() {
       }}
     >
       <Flex direction="column" gap="4" style={{ width: "100%", maxWidth: 1080 }}>
-        <Flex justifyContent="space-between" alignItems="center" gap="4">
+        <Flex
+          justifyContent="space-between"
+          alignItems="center"
+          gap="4"
+          wrap="wrap"
+        >
           <Text variant="headline" el="h1" size="medium">
             Budget Code Picker
           </Text>
@@ -2115,25 +3468,69 @@ export default function BudgetCodePicker() {
                 </SegmentedControl.Segment>
               </SegmentedControl>
             </div>
+
+            {/* Create new: offer the inline "Create new <segment>" affordance. */}
+            <div className="bc-control">
+              <span className="bc-control-label">Create new</span>
+              <SegmentedControl
+                size="small"
+                selected={allowCreateNew ? "yes" : "no"}
+                onChange={(value) => setAllowCreateNew(value === "yes")}
+              >
+                <SegmentedControl.Segment value="yes">
+                  Yes
+                </SegmentedControl.Segment>
+                <SegmentedControl.Segment value="no">
+                  No
+                </SegmentedControl.Segment>
+              </SegmentedControl>
+            </div>
           </div>
         </Flex>
 
-        {/* Row 1: v2 (the chosen direction) featured + centered. Row 2: v1
-            (original bespoke) and v0 (stock SelectFields) for comparison. The
-            slider above constrains just the field inside each card. */}
-        <Flex justifyContent="center">
-          <div style={{ width: "calc(50% - 8px)", minWidth: 420 }}>
-            <PickerV2 size={size} fieldWidth={fieldWidth} keys={keys} />
+        {/* All three options in one horizontally-scrolling row: v2 (chosen,
+            green) first, then v1 and v0 (rejected, red). v0 sits partially
+            off-screen to invite horizontal scrolling. The width slider above
+            constrains just the field inside each card. */}
+        <div
+          style={{
+            display: "flex",
+            gap: "var(--a2-size-4, 16px)",
+            overflowX: "auto",
+            // Room so the 2px card outlines aren't clipped by the scroll box.
+            padding: "var(--a2-size-1, 4px)",
+            alignItems: "stretch",
+            // Break out of the centered max-width column so the row extends to the
+            // right edge of the browser window — v0 hangs off the window (scroll
+            // to reveal it), instead of being clipped by the column.
+            marginRight: "calc(50% - 50vw)",
+          }}
+        >
+          <div style={{ flex: "0 0 480px", maxWidth: "480px" }}>
+            <PickerV2
+              size={size}
+              fieldWidth={fieldWidth}
+              keys={keys}
+              allowCreateNew={allowCreateNew}
+            />
           </div>
-        </Flex>
-        <Flex gap="4" alignItems="flex-start" wrap="wrap">
-          <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV1 size={size} fieldWidth={fieldWidth} keys={keys} />
+          <div style={{ flex: "0 0 480px", maxWidth: "480px" }}>
+            <PickerV1
+              size={size}
+              fieldWidth={fieldWidth}
+              keys={keys}
+              allowCreateNew={allowCreateNew}
+            />
           </div>
-          <div style={{ flex: 1, minWidth: 420 }}>
-            <PickerV0 size={size} fieldWidth={fieldWidth} keys={keys} />
+          <div style={{ flex: "0 0 480px", maxWidth: "480px" }}>
+            <PickerV0
+              size={size}
+              fieldWidth={fieldWidth}
+              keys={keys}
+              allowCreateNew={allowCreateNew}
+            />
           </div>
-        </Flex>
+        </div>
       </Flex>
     </Flex>
   );

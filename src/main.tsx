@@ -1,4 +1,4 @@
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { BrowserRouter, useLocation } from "react-router-dom";
 import { AnvilProvider } from "@servicetitan/anvil2";
 import { Agentation } from "agentation";
@@ -20,7 +20,13 @@ function DevAgentation() {
   return <Agentation endpoint="http://localhost:4747" />;
 }
 
-createRoot(document.getElementById("root")!).render(
+// Reuse a single root across HMR updates so React doesn't warn about calling
+// createRoot() twice on the same container.
+const container = document.getElementById("root")!;
+const globalForRoot = globalThis as typeof globalThis & { __appRoot?: Root };
+const root = (globalForRoot.__appRoot ??= createRoot(container));
+
+root.render(
   <BrowserRouter basename={import.meta.env.BASE_URL}>
     <AnvilProvider themeData={{ mode: "light" }}>
       <App />

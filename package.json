@@ -23,6 +23,7 @@
     "@servicetitan/anvil2-ext-mwv": "^0.0.4",
     "@servicetitan/anvil2-illustrations": "^1.0.1",
     "@servicetitan/tokens": "^12.9.0",
+    "chrome-devtools-mcp": "^1.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

@@ -20,7 +20,7 @@
   box-sizing: border-box;
   overflow: hidden;
   border: 1px solid var(--a2-border-color-default, #c2c8ce);
-  border-radius: var(--a2-border-radius-md, 6px);
+  border-radius: var(--a2-border-radius-medium, 6px);
   background: var(--a2-background-color, #fff);
   font-family: var(--a2-font-family-base, "Nunito Sans", sans-serif);
   cursor: text;
@@ -199,13 +199,13 @@
      field is narrow (the inline width still lets it grow with a wider field). */
   min-width: 300px;
   overflow: hidden;
-  border-radius: var(--a2-border-radius-md, 6px);
+  border-radius: var(--a2-border-radius-medium, 6px);
 }
 
-/* Section header sits inside the padded list; 16px inline aligns with row text
-   (list pad 8px + row inline 16px = 24px). */
+/* Section header: matches Anvil's `SelectOptions.pinned-section-header`
+   (padding: size-2 size-4). Uppercase eyebrow treatment is our grouping style. */
 .bcv1-menu-header {
-  padding: 6px 16px 4px;
+  padding: var(--a2-size-2, 8px) var(--a2-size-4, 16px);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.6px;
@@ -213,34 +213,58 @@
   color: var(--a2-foreground-color-subdued, #606162);
 }
 
-/* Divider between the "This project" and "More …" sections. */
+/* Empty state when the query matches nothing — mirrors Anvil's
+   `SelectOptions.empty` (centered, size-4 padding, subdued). */
+.bcv1-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--a2-size-4, 16px);
+  text-align: center;
+  font-size: var(--a2-font-size-300, 14px);
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+/* Divider between the "This project" and "More …" sections. Matches Anvil's
+   `SelectOptions.divider` (margin: size-2 0 — full-width, no inline inset). */
 .bcv1-menu-hr {
   height: 0;
-  margin: 4px 8px;
+  margin: var(--a2-size-2, 8px) 0;
   border-top: 1px solid var(--a2-border-color-subdued, #dfe0e1);
 }
 
-/* size-2 body padding insets the rounded rows from the popover edges;
-   size-1 gap separates adjacent rows so highlight bands don't touch. */
+/* Mirrors Anvil's `OptionsPopover.options-popover-body`: a non-scrolling frame
+   with size-2 padding that wraps the scroller — so the top/bottom gap stays put
+   while the list scrolls (padding on the scroll container itself scrolls away). */
+.bcv1-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--a2-size-2, 8px);
+}
+
+/* The scroller (Anvil's `SelectOptions.scroller`): no padding of its own; rows
+   are not gapped (Anvil's list touches; the rounded highlight bands separate). */
 .bcv1-list {
   display: flex;
   flex-direction: column;
-  gap: var(--a2-size-1, 4px);
+  gap: 0;
   max-height: 300px;
   overflow-y: auto;
-  padding: var(--a2-size-2, 8px);
   margin: 0;
   list-style: none;
 }
 
-/* Anvil OptionRow: 8px/16px padding, radius-medium, so the highlight is a
-   rounded inset band (not edge-to-edge). */
+/* Mirrors Anvil's `OptionRow`: padding-block size-2 / padding-inline size-4,
+   gap size-2 (content → trailing check), radius-medium, line-height
+   size-4 + size-half (18px). */
 .bcv1-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--a2-size-2, 8px);
-  padding: 8px 16px;
-  border-radius: var(--a2-border-radius-md, 6px);
+  padding: var(--a2-size-2, 8px) var(--a2-size-4, 16px);
+  line-height: calc(var(--a2-size-4, 16px) + var(--a2-size-half, 2px));
+  border-radius: var(--a2-border-radius-medium, 6px);
   cursor: pointer;
 }
 
@@ -285,7 +309,9 @@
 
 .bcv1-row-code {
   flex: none;
-  font-size: 16px;
+  /* Anvil option title = Text size="small" = font-size-300 (14px). Bold is our
+     menu's intentional "code" emphasis (the DS title is regular weight). */
+  font-size: var(--a2-font-size-300, 14px);
   font-weight: 700;
   color: var(--a2-foreground-color, #141414);
 }
@@ -293,7 +319,9 @@
 .bcv1-row-desc {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  /* Match the title size (font-size-300 / 14px) rather than the DS default
+     description size (12px). */
+  font-size: var(--a2-font-size-300, 14px);
   color: var(--a2-foreground-color-subdued, #606162);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -306,6 +334,9 @@
   flex: none;
   width: 18px;
   display: inline-flex;
+  /* Keep the check vertically centered even though the row is baseline-aligned
+     (the icon has no text baseline to sit on). */
+  align-self: center;
   align-items: center;
   justify-content: center;
   color: var(--a2-foreground-color-primary, #0265dc);
@@ -369,8 +400,21 @@
 }
 
 /* ── Top-right controls (dev harness) — two shadcn-style boxes ───────── */
+/* Narrow viewports: the fused field has a fixed pixel width (the slider value),
+   so its flex-column ancestors shrink-wrap to it and can push the card wider
+   than its container. Cap those ancestors to their parent so the field's own
+   max-width:100% resolves and it shrinks to fit instead of overflowing. */
+[data-anv="flex"]:has(.bcv1-shell),
+[data-anv="flex"]:has(.bcv0-fields) {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .bc-controls {
   display: inline-flex;
+  /* Wrap the control boxes onto multiple rows on narrow viewports instead of
+     overflowing horizontally. */
+  flex-wrap: wrap;
   /* Stretch both boxes to the tallest so they match height. */
   align-items: stretch;
   gap: 12px;
@@ -607,14 +651,25 @@
 
 /* DEVIATION: give all three v0 menus the same fixed width (Anvil would size to
    the trigger/content and vary per field). `:not(...-)` targets the popover
-   root only, not its -body/-footer children. Clamp title/description to 1 line. */
-[class*="options-popover"]:not([class*="options-popover-"]) {
+   root only, not its -body/-footer children. Clamp title/description to 1 line.
+   Scoped to the v0 fields so it doesn't clobber Anvil's field-matching width on
+   the Create New Cost Code dialog's Parent menu. */
+.bcv0-fields [class*="options-popover"]:not([class*="options-popover-"]) {
   width: 300px !important;
 }
 
 [class*="options-popover"] {
   --a2-mod-option-content-title-line-clamp: 1;
   --a2-mod-option-content-description-line-clamp: 1;
+}
+
+/* Anvil's popover body is content-box with an 8px pad, so at a fixed popover
+   width it renders 16px wider than the popover and the option rows (and their
+   highlight) bleed to — and just past — the menu edges. Border-box keeps the
+   body within the popover so that 8px pad becomes an even inset gap on every
+   side, like the v1 menu. */
+[class*="options-popover-body"] {
+  box-sizing: border-box !important;
 }
 
 /* Footer keeps Anvil's default gray surface (background-color-strong), a
@@ -634,6 +689,7 @@
 [class*="options-popover"] div:has(> [class*="title"]) {
   /* Anvil sets flex-direction/justify-content inline, so override with !important. */
   flex-direction: row !important;
+  /* Baseline-align the code + description type; matches the v1/v2 menu rows. */
   align-items: baseline !important;
   justify-content: flex-start !important;
   column-gap: 8px;
@@ -642,7 +698,9 @@
 [class*="options-popover"] [class*="title"] {
   flex: none;
   margin: 0;
-  font-size: 16px;
+  /* DS default title size (Text small = font-size-300 / 14px); bold is our
+     menu's "code" emphasis. */
+  font-size: var(--a2-font-size-300, 14px);
   font-weight: 700;
 }
 
@@ -650,7 +708,8 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 15px;
+  /* Match the title size (font-size-300 / 14px) rather than the DS default (12px). */
+  font-size: var(--a2-font-size-300, 14px);
 }
 
 /* Selected option: full blue label (title + description) to match v1. Anvil
@@ -659,4 +718,35 @@
 [class*="options-popover"] [class*="single-selected"] [class*="title"],
 [class*="options-popover"] [class*="single-selected"] [class*="description"] {
   color: var(--a2-foreground-color-primary, #0265dc) !important;
+}
+
+/* Create New Cost Code: the parent prefix (e.g. "01-") should sit adjacent to
+   the typed suffix and read as subdued/regular weight (not bold, dark). Anvil's
+   TextField prefix defaults to font-weight 600, the primary text color, and a
+   12px right padding that opens a gap before the value. DEVIATION: targets the
+   compiled `_prefix_` class scoped to this dialog's Cost Code field. */
+.bc-costcode-field [class*="prefix"] {
+  padding-right: 0;
+  font-weight: 400;
+  color: var(--a2-foreground-color-subdued, #606162);
+}
+
+/* Create New Cost Code · Parent dropdown. */
+/* The plain "None" option has no description, so the shared picker rule that
+   bolds every option title (bold division numbers) shouldn't apply — keep it
+   regular weight. Division rows (title + description) stay bold. */
+.bc-parent-field [role="option"]:not(:has([class*="description"])) [class*="title"] {
+  font-weight: 400 !important;
+}
+
+/* Span the menu to the full field width (Anvil renders the popover a hair
+   narrower than the 312px dialog field); floor it to the field width. */
+.bc-parent-field [class*="options-popover"] {
+  min-width: 312px !important;
+}
+
+/* Parent is the first field and defaults to None, so its clear "×"
+   (reset-to-None) is redundant — hide it. */
+.bc-parent-field button[aria-label="clear selection" i] {
+  display: none !important;
 }
