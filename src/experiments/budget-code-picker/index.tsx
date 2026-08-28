@@ -64,9 +64,8 @@ const SEGMENT_ORDER: SegmentKey[] = ["cost-code", "cost-type", "phase"];
 // is allowed — list only the segments you want prefilled and leave the rest
 // out to start them empty. Set to {} to start with nothing selected.
 const DEFAULT_SELECTION: Partial<Record<SegmentKey, string>> = {
-  "cost-code": "cc-2", // 01-200 · Project Management
-  "cost-type": "ct-1", // Labor
-  // "phase": "ph-1",  // uncomment to also preselect a phase
+  // Start with nothing selected. Add ids (e.g. "cost-code": "cc-2") to prefill
+  // specific segments on load.
 };
 
 type FieldSize = "small" | "medium";
@@ -3399,6 +3398,10 @@ export default function BudgetCodePicker() {
         background: "var(--a2-background-color-secondary, #f5f6f7)",
         minHeight: "100vh",
         boxSizing: "border-box",
+        // The card row bleeds to the right window edge; clip the few px of
+        // page-level overflow that `50vw` (scrollbar-inclusive) adds so the page
+        // never scrolls horizontally (which would clip the title on the left).
+        overflowX: "clip",
       }}
     >
       <Flex direction="column" gap="4" style={{ width: "100%", maxWidth: 1080 }}>
@@ -3495,14 +3498,22 @@ export default function BudgetCodePicker() {
         <div
           style={{
             display: "flex",
-            gap: "var(--a2-size-4, 16px)",
+            gap: "var(--a2-size-6, 24px)",
             overflowX: "auto",
-            // Room so the 2px card outlines aren't clipped by the scroll box.
+            // Vertical room so the 2px card outlines aren't clipped. The left
+            // inset exactly cancels the negative left margin below, so at rest the
+            // first card lines up with the centered content column (the title) at
+            // ANY width — yet the inset scrolls away, letting cards reach the left
+            // window edge.
             padding: "var(--a2-size-1, 4px)",
+            paddingLeft: "calc(50vw - 50%)",
+            // Trailing breathing room after the rightmost card at scroll end.
+            paddingRight: "var(--a2-size-6, 24px)",
             alignItems: "stretch",
-            // Break out of the centered max-width column so the row extends to the
-            // right edge of the browser window — v0 hangs off the window (scroll
-            // to reveal it), instead of being clipped by the column.
+            // Full-bleed to both window edges (breaking out of the centered
+            // max-width column) so cards scroll edge-to-edge: v0 hangs off the
+            // right, and scrolling carries cards all the way to the left edge.
+            marginLeft: "calc(50% - 50vw)",
             marginRight: "calc(50% - 50vw)",
           }}
         >
