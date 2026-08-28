@@ -13,8 +13,9 @@
   align-items: center;
   gap: 0;
   width: 100%;
-  /* Match Anvil2's standard medium field height (40px); small is 32px below. */
-  min-height: 40px;
+  /* Anvil2 standard field height: medium = size-10 (40px), small = size-8 (32px
+     below) — the same tokens Anvil's own TextField uses for its control height. */
+  min-height: var(--a2-size-10, 40px);
   /* Left inset = shell padding (8px) + first input padding (4px) = 12px, to
      match Anvil SelectField's text offset from the border. */
   padding: 0 8px;
@@ -56,17 +57,17 @@
 
 /* Small size: shorter field + smaller text, mirroring Anvil SelectField size. */
 .bcv1-shell--small {
-  min-height: 32px;
+  min-height: var(--a2-size-8, 32px);
   padding: 0 6px;
 }
 
 .bcv1-shell--small .bcv1-input {
-  font-size: 14px;
+  font-size: var(--a2-font-size-300, 14px);
   padding: 4px 4px;
 }
 
 .bcv1-shell--small .bcv1-sep {
-  font-size: 14px;
+  font-size: var(--a2-font-size-300, 14px);
 }
 
 /* Every segment is an <input>; committed ones get --token (read-only, styled
@@ -74,7 +75,7 @@
    when the active segment changes. */
 .bcv1-input {
   font-family: inherit;
-  font-size: 16px;
+  font-size: var(--a2-font-size-400, 16px);
   color: var(--a2-foreground-color, #141414);
   line-height: 1.4;
   border: 0;
@@ -113,7 +114,7 @@
   inset: 0;
   padding: 6px 4px;
   box-sizing: border-box;
-  font-size: 16px;
+  font-size: var(--a2-font-size-400, 16px);
   line-height: 22.4px; /* match .bcv1-input (16px × 1.4) for vertical alignment */
   color: var(--a2-foreground-color-placeholder, #757575);
   white-space: nowrap;
@@ -123,7 +124,7 @@
 }
 
 .bcv1-shell--small .bcv1-ph {
-  font-size: 14px;
+  font-size: var(--a2-font-size-300, 14px);
   padding: 4px 4px;
   line-height: 19.6px; /* 14px × 1.4 */
 }
@@ -248,7 +249,7 @@
    (padding: size-2 size-4). Uppercase eyebrow treatment is our grouping style. */
 .bcv1-menu-header {
   padding: var(--a2-size-2, 8px) var(--a2-size-4, 16px);
-  font-size: 12px;
+  font-size: var(--a2-font-size-200, 12px);
   font-weight: 600;
   letter-spacing: 0.6px;
   text-transform: uppercase;
@@ -677,7 +678,7 @@
 .bcv0-sep {
   flex: none;
   padding: 0 6px;
-  font-size: 16px;
+  font-size: var(--a2-font-size-400, 16px);
   /* Heavier separator per Figma: Anvil display/headline face (Sofia Pro Bold). */
   font-family: var(--a2-font-family-display, "Sofia Pro", SofiaPro, sans-serif);
   font-weight: 700;
